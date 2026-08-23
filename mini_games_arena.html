@@ -1,0 +1,2348 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+<title>Mini Games Arena</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700;900&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { font-family:'Nunito',sans-serif; overflow:hidden; background:#0a0a1a; color:#fff; height:100%; touch-action:manipulation; }
+  #game-container { position:relative; width:100vw; height:100vh; overflow:hidden; }
+  canvas { display:block; width:100%; height:100%; background:#0a0a1a; }
+
+  .screen { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; z-index:10; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .screen.active { display:flex; }
+
+  #menuScreen { background: linear-gradient(180deg, #1a0f2e 0%, #0a0515 100%); justify-content:center; padding:20px; }
+  .game-title { font-family:'Fredoka One',cursive; font-size:clamp(28px,7vw,56px); color:#ffd93d; text-shadow:0 4px 0 #c78f00, 0 8px 20px rgba(0,0,0,0.5); margin-bottom:8px; text-align:center; }
+  .subtitle { color:#aaa; font-size:clamp(13px,3vw,17px); margin-bottom:20px; text-align:center; max-width:90vw; }
+  .menu-btn { background:linear-gradient(135deg,#4ecdc4,#44a08d); border:none; color:#fff; font-family:'Fredoka One',cursive; font-size:clamp(16px,3.8vw,22px); padding:14px 40px; border-radius:14px; margin:8px; cursor:pointer; box-shadow:0 5px 0 #2d8a7a, 0 8px 18px rgba(0,0,0,0.3); transition:transform 0.1s; width:min(280px,85vw); text-align:center; touch-action:manipulation; }
+  .menu-btn:active { transform:translateY(3px); }
+  .menu-btn.mp { background:linear-gradient(135deg,#f39c12,#e67e22); box-shadow:0 5px 0 #c0392b, 0 8px 18px rgba(0,0,0,0.3); }
+  .menu-btn.solo { background:linear-gradient(135deg,#a29bfe,#6c5ce7); box-shadow:0 5px 0 #4834d4, 0 8px 18px rgba(0,0,0,0.3); }
+  .menu-btn.danger { background:linear-gradient(135deg,#ff6b6b,#c0392b); box-shadow:0 5px 0 #8b1e1e, 0 8px 18px rgba(0,0,0,0.3); }
+  .menu-btn:disabled { opacity:0.45; cursor:default; box-shadow:none; }
+
+  .back-btn { position:fixed; top:16px; left:16px; background:#222; border:none; color:#fff; padding:10px 18px; border-radius:10px; cursor:pointer; font-weight:700; z-index:100; touch-action:manipulation; display:none; }
+
+  #roomScreen, #lobbyScreen, #selectGameScreen, #readyScreen, #voteScreen { background: linear-gradient(180deg, #1a0f2e 0%, #0a0515 100%); justify-content:flex-start; padding:70px 16px 30px; }
+  .mp-code { font-family:'Fredoka One',cursive; font-size:clamp(26px,8vw,40px); letter-spacing:6px; color:#ffd93d; margin:10px 0; text-shadow:0 4px 12px rgba(0,0,0,0.4); }
+  .mp-input { width:min(260px,80vw); height:46px; border:2px solid #2a2a4a; border-radius:12px; background:rgba(0,0,0,0.35); color:#fff; font-size:18px; font-weight:800; text-align:center; text-transform:uppercase; letter-spacing:3px; outline:none; margin:8px 0; }
+  .mp-input:focus { border-color:#ffd93d; }
+  .mp-status { color:#aaa; font-size:14px; min-height:22px; margin-top:8px; text-align:center; }
+  .player-slots { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; max-width:520px; margin:16px auto; width:100%; }
+  .player-slot { background:linear-gradient(180deg,#1a1a3a,#0d0d1f); border:2px solid #2a2a4a; border-radius:14px; padding:14px 12px; width:min(140px,42vw); text-align:center; }
+  .player-slot.filled { border-color:#4ecdc4; }
+  .player-slot.host { border-color:#ffd93d; }
+  .player-slot.ready-yes { border-color:#4ecdc4; box-shadow:0 0 12px rgba(78,205,196,0.35); }
+  .player-slot .avatar { font-size:32px; margin-bottom:6px; }
+  .player-slot .name { font-weight:800; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .player-slot .score-tag { font-size:12px; color:#ffd93d; margin-top:4px; }
+
+  .game-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; width:100%; max-width:560px; margin:12px auto 24px; }
+  .game-card { background:linear-gradient(180deg,#1a1a3a,#0d0d1f); border:2px solid #2a2a4a; border-radius:16px; padding:16px 10px; text-align:center; cursor:pointer; transition:0.15s; position:relative; }
+  .game-card:hover, .game-card.selected { border-color:#ffd93d; box-shadow:0 0 18px rgba(255,217,61,0.25); }
+  .game-card .icon { font-size:36px; margin-bottom:8px; }
+  .game-card .gname { font-weight:800; font-size:14px; }
+  .game-card .gdesc { font-size:11px; color:#aaa; margin-top:4px; line-height:1.3; }
+  .game-card .vote-count { position:absolute; top:8px; right:8px; background:#ffd93d; color:#1a0f2e; font-weight:800; font-size:12px; min-width:22px; height:22px; border-radius:11px; display:flex; align-items:center; justify-content:center; padding:0 6px; }
+
+  .score-table { width:100%; max-width:420px; margin:12px auto; border-collapse:collapse; font-size:14px; }
+  .score-table th, .score-table td { padding:8px 10px; text-align:left; border-bottom:1px solid #2a2a4a; }
+  .score-table th { color:#ffd93d; font-family:'Fredoka One',cursive; font-weight:400; }
+  .score-table tr.me td { color:#4ecdc4; font-weight:800; }
+  .score-table .rank { width:28px; color:#aaa; }
+  .score-table .pts { text-align:right; font-weight:800; color:#ffd93d; }
+
+  #hud { position:absolute; top:0; left:0; right:0; pointer-events:none; display:none; z-index:20; padding:10px 12px; }
+  .hud-row { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+  .hud-player { background:rgba(0,0,0,0.65); border:2px solid #333; border-radius:12px; padding:6px 10px; font-size:13px; font-weight:700; display:flex; align-items:center; gap:6px; }
+  .hud-player.me { border-color:#4ecdc4; }
+  .hud-player .hp { color:#ffd93d; }
+  #gameTimer { position:absolute; top:12px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.75); padding:8px 20px; border-radius:20px; font-family:'Fredoka One',cursive; font-size:22px; color:#ffd93d; z-index:25; display:none; }
+  #roundInfo { position:absolute; top:52px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.6); padding:4px 14px; border-radius:12px; font-size:13px; color:#ccc; z-index:25; display:none; white-space:nowrap; }
+
+  #resultOverlay { display:none; position:fixed; inset:0; z-index:50; background:rgba(0,0,0,0.88); flex-direction:column; align-items:center; justify-content:center; padding:16px; overflow-y:auto; }
+  #resultOverlay.show { display:flex; }
+  .result-box { background:linear-gradient(180deg,#1a1a3a,#0a0a1e); border-radius:20px; padding:24px 18px; text-align:center; max-width:400px; width:95%; border:2px solid #2a2a4a; }
+  .result-title { font-family:'Fredoka One',cursive; font-size:clamp(22px,5.5vw,32px); margin-bottom:8px; color:#ffd93d; }
+  .result-subtitle { color:#aaa; font-size:13px; margin-bottom:12px; }
+  .result-btn { padding:12px 24px; border-radius:12px; border:none; font-weight:700; font-size:15px; cursor:pointer; margin:6px; touch-action:manipulation; }
+  .result-btn.primary { background:#4ecdc4; color:#fff; }
+  .result-btn.secondary { background:#333; color:#fff; }
+
+  #touchArea { position:absolute; inset:0; z-index:15; display:none; }
+  #clickBtn { position:absolute; left:50%; top:58%; transform:translate(-50%,-50%); width:min(170px,48vw); height:min(170px,48vw); border-radius:50%; background:linear-gradient(135deg,#ff6b6b,#ee5a5a); border:4px solid #ffd93d; color:#fff; font-family:'Fredoka One',cursive; font-size:26px; box-shadow:0 8px 0 #c0392b; display:none; z-index:30; cursor:pointer; touch-action:manipulation; user-select:none; }
+  #clickBtn:active { transform:translate(-50%,-50%) scale(0.94); box-shadow:0 3px 0 #c0392b; }
+
+  .name-input { width:min(240px,80vw); height:44px; border:2px solid #2a2a4a; border-radius:12px; background:rgba(0,0,0,0.35); color:#fff; font-size:16px; font-weight:700; text-align:center; outline:none; margin:8px 0; }
+  .name-input:focus { border-color:#ffd93d; }
+
+  .sync-indicator { position:fixed; bottom:10px; left:10px; z-index:400; background:rgba(10,10,26,.9); padding:6px 12px; border-radius:16px; font-size:12px; border:1.5px solid; display:flex; align-items:center; gap:5px; }
+  .sync-indicator.online { color:#4ecdc4; border-color:rgba(78,205,196,.4); }
+  .sync-indicator.offline { color:#ffd93d; border-color:rgba(255,217,61,.4); }
+
+  .ready-big { font-family:'Fredoka One',cursive; font-size:clamp(20px,5vw,28px); color:#ffd93d; margin:12px 0 8px; text-align:center; }
+  .ready-game-icon { font-size:48px; margin:8px 0; }
+  .howto-box { background:rgba(0,0,0,0.35); border:2px solid #2a2a4a; border-radius:14px; padding:14px 16px; max-width:420px; width:92%; margin:8px auto 14px; font-size:14px; line-height:1.45; color:#ddd; text-align:left; }
+  .howto-box strong { color:#ffd93d; }
+  #clickBtn, #touchArea, canvas { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="menuScreen" class="screen active">
+    <div class="game-title">🎮 MINI GAMES<br>ARENA</div>
+    <div class="subtitle">Bis 4 Spieler · Viele Mini-Games</div>
+    <input class="name-input" id="playerNameInput" placeholder="Dein Name" maxlength="14" value="">
+    <button class="menu-btn mp" onclick="app.openMultiplayer()">🌐 MULTIPLAYER</button>
+    <button class="menu-btn solo" onclick="app.startSoloPractice()">🎯 SOLO ÜBEN</button>
+  </div>
+
+  <div id="roomScreen" class="screen">
+    <button class="back-btn" id="roomBackBtn" style="display:block" onclick="app.leaveToMenu()">← Zurück</button>
+    <div class="game-title" style="font-size:clamp(22px,5.5vw,36px);margin-top:10px">🌐 Multiplayer</div>
+    <div class="subtitle">2–4 Spieler · Gruppe bis zur Auflösung</div>
+    <button class="menu-btn mp" onclick="app.createRoom()">RAUM ERSTELLEN</button>
+    <input class="mp-input" id="roomCodeInput" placeholder="RAUM-CODE" maxlength="6" autocomplete="off">
+    <button class="menu-btn" onclick="app.joinRoom()">RAUM BEITRETEN</button>
+    <div class="mp-status" id="roomStatus"></div>
+  </div>
+
+  <div id="lobbyScreen" class="screen">
+    <div class="game-title" style="font-size:clamp(20px,5vw,32px);margin-top:10px">⏳ Gruppe</div>
+    <p style="color:#aaa;margin:4px 0">Raum-Code:</p>
+    <div class="mp-code" id="lobbyCode">------</div>
+    <button class="menu-btn mp" id="lobbyStartBtn" onclick="app.hostOpenGameSelect()" style="display:none">SPIELE STARTEN</button>
+    <div class="player-slots" id="lobbySlots"></div>
+    <div class="mp-status" id="lobbyStatus">Warte auf Spieler...</div>
+    <table class="score-table" id="lobbyScoreTable" style="display:none"></table>
+  </div>
+
+  <!-- Host first pick OR host final decision after vote -->
+  <div id="selectGameScreen" class="screen">
+    <button class="back-btn" id="selectLeaveBtn" style="display:none" onclick="app.leaveRoomToMenu()">← Raum verlassen</button>
+    <div class="game-title" style="font-size:clamp(20px,5vw,32px);margin-top:10px">🎲 Mini-Game wählen</div>
+    <div class="subtitle" id="selectSubtitle">Host wählt das Spiel – danach Ready von allen</div>
+    <button class="menu-btn mp" id="startSelectedBtn" onclick="app.hostConfirmGame()" disabled>SPIEL STARTEN</button>
+    <div class="game-grid" id="gameSelectGrid"></div>
+    <button class="menu-btn danger" id="selectEndSessionBtn" style="display:none;margin-top:4px" onclick="app.leaveRoomToMenu()">SESSION BEENDEN → MENÜ</button>
+  </div>
+
+  <!-- Vote after each round -->
+  <div id="voteScreen" class="screen">
+    <div class="game-title" style="font-size:clamp(20px,5vw,32px);margin-top:10px">🗳️ Abstimmung</div>
+    <div class="subtitle">Was soll als Nächstes kommen? Host entscheidet am Ende.</div>
+    <button class="menu-btn mp" id="hostFinalizeVoteBtn" style="display:none" onclick="app.hostFinalizeVote()" disabled>SPIEL STARTEN</button>
+    <div class="mp-status" id="voteStatus">Wähle ein Spiel...</div>
+    <div class="game-grid" id="voteGrid"></div>
+  </div>
+
+  <div id="readyScreen" class="screen">
+    <div class="ready-game-icon" id="readyGameIcon">⚡</div>
+    <div class="ready-big" id="readyGameName">Reaktion</div>
+    <div class="howto-box" id="readyHowto">Erklärung erscheint hier.</div>
+    <div class="player-slots" id="readySlots"></div>
+    <div class="mp-status" id="readyStatus">Warte bis alle bereit sind...</div>
+    <button class="menu-btn" id="readyBtn" onclick="app.pressGameReady()">✓ BEREIT – VERSTANDEN</button>
+  </div>
+
+  <div id="hud"><div class="hud-row" id="hudPlayers"></div></div>
+  <div id="gameTimer">0</div>
+  <div id="roundInfo"></div>
+  <button id="clickBtn" type="button">KLICK!</button>
+  <div id="touchArea"></div>
+
+  <div id="resultOverlay">
+    <div class="result-box">
+      <div class="result-title" id="resultTitle">Runde beendet!</div>
+      <div class="result-subtitle" id="resultSubtitle">Diese Runde</div>
+      <table class="score-table" id="resultRoundTable"></table>
+      <div class="result-subtitle" style="margin-top:14px" id="resultTotalLabel">Gesamtpunkte (Gruppe)</div>
+      <table class="score-table" id="resultTotalTable"></table>
+      <button class="result-btn primary" id="resultNextBtn" onclick="app.afterResult()">Zur Abstimmung</button>
+      <button class="result-btn primary" id="resultRestartBtn" style="display:none" onclick="app.restartToLobby()">Lobby neu starten</button>
+      <button class="result-btn secondary" id="resultLeaveBtn" style="display:none" onclick="app.leaveRoomToMenu()">Verlassen</button>
+    </div>
+  </div>
+
+  <div class="sync-indicator offline" id="syncIndicator"><span id="syncIcon">📴</span><span id="syncText">Offline</span></div>
+</div>
+
+<script>
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBY-qSrGSofYHGumEUgW57Gj3n7935wrMI",
+  authDomain: "datenspeicher-68b34.firebaseapp.com",
+  projectId: "datenspeicher-68b34",
+  storageBucket: "datenspeicher-68b34.firebasestorage.app",
+  messagingSenderId: "126239957486",
+  appId: "1:126239957486:web:f5e4caf15688abacb96eff"
+};
+const MP_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAUSJYinRuT0vzekF30RC_nnNw0nLVM17Y",
+  authDomain: "fifa-aef81.firebaseapp.com",
+  databaseURL: "https://fifa-aef81-default-rtdb.firebaseio.com",
+  projectId: "fifa-aef81",
+  storageBucket: "fifa-aef81.firebasestorage.app",
+  messagingSenderId: "420414392265",
+  appId: "1:420414392265:web:5fe085b42bea98bd83ca18"
+};
+
+let rtdb = null, auth = null;
+const COLORS = ['#4ecdc4', '#ff6b6b', '#ffd93d', '#a29bfe'];
+const AVATARS = ['🟦', '🟥', '🟨', '🟪'];
+const MINI_GAMES = [
+  { id: 'reaction', name: 'Schnell-Tipp', icon: '⚡', desc: 'Bei Blau einmal tippen – so schnell wie möglich!',
+    howto: '<strong>So geht\'s:</strong> Der Kreis wechselt Rot → Gelb → Grün → <strong>Blau</strong>. Tippe erst bei Blau. Zu früh = 0. Schneller = mehr Punkte.' },
+  { id: 'clicker', name: 'Tipp-Battle', icon: '👆', desc: 'Bei Blau so oft tippen wie möglich (10 Sek.)!',
+    howto: '<strong>So geht\'s:</strong> Gleicher Farb-Countdown. Bei <strong>Blau</strong> tippe so oft wie möglich in 10 Sekunden. Mehr Tipps = mehr Punkte.' },
+  { id: 'shooter', name: 'Hamster-Hau', icon: '🐹', desc: '9 Löcher – schlag die Hamster!',
+    howto: '<strong>So geht\'s:</strong> In 9 Löchern erscheinen Hamster und bleiben bis zum Treffer. Tippe auf den Kopf.' },
+  { id: 'flappy', name: 'Flappy Race', icon: '🐦', desc: 'Tippe zum Fliegen – Lücken werden enger!',
+    howto: '<strong>So geht\'s:</strong> Tippe zum Flattern. Fliege durch die Lücken. Am Anfang groß, später enger.' },
+  { id: 'memory', name: 'Memory Sprint', icon: '🃏', desc: '30 Sek. – so viele Paare wie möglich!',
+    howto: '<strong>So geht\'s:</strong> Decke Karten auf und finde Paare. <strong>30 Sekunden</strong> Zeit. Am Ende zählen die gefundenen Paare.' },
+  { id: 'gallery', name: 'Tresen-Schießen', icon: '🔫', desc: 'Figuren hinter dem Tresen – treffe sie!',
+    howto: '<strong>So geht\'s:</strong> Tippe auf Figuren – sie fallen um. Fehlschuss: 💥 an der Wand und Punktabzug.' },
+  { id: 'tetris', name: 'Tetris Blitz', icon: '🧱', desc: '45 Sek. – lege so viele Reihen wie möglich!',
+    howto: '<strong>So geht\'s:</strong> Tippe links/rechts zum Bewegen, oben zum Drehen, unten zum Droppen. Volle Reihen bringen Punkte. <strong>45 Sekunden</strong>.' },
+  { id: 'racer', name: 'Rennstrecke', icon: '🏎️', desc: 'Weiche den Autos aus – 30 Sek.!',
+    howto: '<strong>So geht\'s:</strong> Tippe links oder rechts, um die Spur zu wechseln. Weiche den anderen Autos aus. Je länger ohne Crash, desto mehr Punkte.' },
+  { id: 'runner', name: 'Jump & Run', icon: '🏃', desc: 'Seitenansicht – von rechts nach links!',
+    howto: '<strong>So geht\'s:</strong> Figur von der Seite. Hindernisse kommen von rechts. <strong>Hoch wischen</strong> = springen, <strong>runter wischen</strong> = ducken. 30 Sekunden.' }
+];
+
+const woodImg = new Image();
+woodImg.src = 'wood_bg.jpg';
+woodImg.onerror = function() { this.src = '/home/workdir/artifacts/wood_bg.jpg'; };
+
+const MAX_ROUNDS = 10;
+
+const mp = {
+  active: false, isHost: false, roomCode: '', playerId: Math.random().toString(36).substring(2, 10),
+  roomRef: null, unsub: null, myName: 'Spieler', mySlot: 0, players: {},
+  selectedGame: null, gameActive: false, solo: false, phase: 'lobby',
+  votes: {}, hostPick: null, roundsPlayed: 0, sessionOver: false
+};
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+function resize() {
+  canvas.width = Math.max(320, window.innerWidth || 800);
+  canvas.height = Math.max(300, window.innerHeight || 600);
+}
+window.addEventListener('resize', resize); resize();
+
+const app = {
+  screen: 'menuScreen', selectedGameId: null, animFrame: null, currentGame: null,
+  _startingGame: false, _beginPublished: false, _finishSent: false, myVote: null,
+
+  setScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    if (id && id !== 'none') {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('active');
+    }
+    this.screen = id;
+    // Zurück nur auf Raum-Erstellen/Beitreten
+    const roomBack = document.getElementById('roomBackBtn');
+    if (roomBack) roomBack.style.display = (id === 'roomScreen') ? 'block' : 'none';
+    // Raum verlassen NUR Multiplayer + NUR während Host-Spielauswahl
+    const leaveBtn = document.getElementById('selectLeaveBtn');
+    const endBtn = document.getElementById('selectEndSessionBtn');
+    if (leaveBtn) leaveBtn.style.display = (!mp.solo && mp.active && id === 'selectGameScreen') ? 'block' : 'none';
+    if (endBtn) endBtn.style.display = (!mp.solo && mp.active && mp.isHost && id === 'selectGameScreen') ? 'block' : 'none';
+
+    if (id !== 'none') {
+      document.getElementById('hud').style.display = 'none';
+      document.getElementById('gameTimer').style.display = 'none';
+      document.getElementById('roundInfo').style.display = 'none';
+      document.getElementById('clickBtn').style.display = 'none';
+      document.getElementById('touchArea').style.display = 'none';
+    }
+  },
+
+  getName() {
+    const v = (document.getElementById('playerNameInput').value || '').trim();
+    return v || ('Spieler' + Math.floor(Math.random() * 90 + 10));
+  },
+
+  openMultiplayer() {
+    mp.myName = this.getName();
+    this.setScreen('roomScreen');
+    document.getElementById('roomStatus').textContent = '';
+  },
+
+  leaveToMenu() {
+    this.cleanupRoom();
+    this.setScreen('menuScreen');
+  },
+
+  /** Raum verlassen: nur von Spielauswahl-Screen. Host löst Gruppe auf → alle ins Menü. */
+  leaveRoomToMenu() {
+    if (mp.solo) {
+      this.cleanupRoom();
+      this.setScreen('menuScreen');
+      return;
+    }
+    // Host beendet Session komplett → Raum weg → alle ins Menü
+    if (mp.isHost) {
+      this.cleanupRoom();
+      this.setScreen('menuScreen');
+      return;
+    }
+    // Gast verlässt nur sich selbst, Gruppe bleibt
+    try {
+      if (mp.roomRef && mp.playerId) mp.roomRef.child('players/' + mp.playerId).remove();
+      if (mp.unsub && mp.roomRef) mp.roomRef.off('value', mp.unsub);
+    } catch (e) {}
+    mp.active = false;
+    mp.roomRef = null;
+    mp.unsub = null;
+    mp.players = {};
+    mp.gameActive = false;
+    this.currentGame = null;
+    document.getElementById('resultOverlay').classList.remove('show');
+    this.setScreen('menuScreen');
+  },
+
+  _makeCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let c = '';
+    for (let i = 0; i < 5; i++) c += chars[Math.floor(Math.random() * chars.length)];
+    return c;
+  },
+
+  async createRoom() {
+    if (!rtdb) { document.getElementById('roomStatus').textContent = 'Firebase nicht bereit.'; return; }
+    try {
+      mp.active = true; mp.isHost = true; mp.solo = false;
+      mp.roomCode = this._makeCode(); mp.mySlot = 0;
+      mp.roomRef = rtdb.ref('partyArena/' + mp.roomCode);
+      await mp.roomRef.set({
+        host: mp.playerId, created: Date.now(), phase: 'lobby',
+        selectedGame: null, gameState: null, votes: null, hostPick: null,
+        roundsPlayed: 0,
+        players: {
+          [mp.playerId]: { name: mp.myName, slot: 0, gameReady: false, connected: true, totalScore: 0, color: COLORS[0] }
+        }
+      });
+      mp.roundsPlayed = 0;
+      mp.sessionOver = false;
+      try { mp.roomRef.child('players/' + mp.playerId + '/connected').onDisconnect().set(false); } catch (e) {}
+      this._listenRoom();
+      this.setScreen('lobbyScreen');
+      document.getElementById('lobbyCode').textContent = mp.roomCode;
+      this.renderLobby();
+    } catch (e) {
+      document.getElementById('roomStatus').textContent = 'Fehler: ' + (e.message || e);
+      mp.active = false;
+    }
+  },
+
+  async joinRoom() {
+    if (!rtdb) return;
+    const code = (document.getElementById('roomCodeInput').value || '').trim().toUpperCase();
+    const status = document.getElementById('roomStatus');
+    if (code.length < 4) { status.textContent = 'Bitte gültigen Code eingeben.'; return; }
+    try {
+      const snap = await rtdb.ref('partyArena/' + code).once('value');
+      if (!snap.exists()) { status.textContent = 'Raum nicht gefunden.'; return; }
+      const data = snap.val();
+      const players = data.players || {};
+      const ids = Object.keys(players).filter(id => players[id] && players[id].connected !== false);
+      if (ids.length >= 4) { status.textContent = 'Raum ist voll (max. 4).'; return; }
+      if (data.phase === 'playing') { status.textContent = 'Spiel läuft – du trittst der Gruppe bei und wartest.'; }
+
+      const usedSlots = new Set(ids.map(id => players[id].slot));
+      let slot = 0; while (usedSlots.has(slot) && slot < 4) slot++;
+
+      mp.active = true; mp.isHost = false; mp.solo = false;
+      mp.roomCode = code; mp.mySlot = slot;
+      mp.roomRef = rtdb.ref('partyArena/' + code);
+      await mp.roomRef.child('players/' + mp.playerId).set({
+        name: this.getName(), slot, gameReady: false, connected: true, totalScore: 0, color: COLORS[slot % COLORS.length]
+      });
+      try { mp.roomRef.child('players/' + mp.playerId + '/connected').onDisconnect().set(false); } catch (e) {}
+      this._listenRoom();
+      this.setScreen('lobbyScreen');
+      document.getElementById('lobbyCode').textContent = code;
+      this.renderLobby();
+    } catch (e) {
+      status.textContent = 'Fehler: ' + (e.message || e);
+      mp.active = false;
+    }
+  },
+
+  _listenRoom() {
+    if (!mp.roomRef) return;
+    if (mp.unsub) { try { mp.roomRef.off('value', mp.unsub); } catch (e) {} }
+    mp.unsub = (snap) => {
+      if (!snap.exists()) {
+        if (mp.active) { alert('Gruppe wurde aufgelöst.'); this.leaveRoomToMenu(); }
+        return;
+      }
+      const data = snap.val();
+      const raw = data.players || {};
+      const live = {};
+      Object.entries(raw).forEach(([id, p]) => { if (p && p.connected !== false) live[id] = p; });
+      mp.players = live;
+      mp.phase = data.phase || 'lobby';
+      mp.selectedGame = data.selectedGame || null;
+      mp.votes = data.votes || {};
+      mp.hostPick = data.hostPick || null;
+      mp.roundsPlayed = data.roundsPlayed || 0;
+      mp.sessionOver = !!data.sessionOver || (mp.roundsPlayed >= MAX_ROUNDS && data.phase === 'result');
+
+      if (mp.phase === 'lobby') {
+        this._startingGame = false;
+        this._beginPublished = false;
+        document.getElementById('resultOverlay').classList.remove('show');
+        if (this.screen !== 'lobbyScreen') this.setScreen('lobbyScreen');
+        document.getElementById('lobbyCode').textContent = mp.roomCode;
+        this.renderLobby();
+      } else if (mp.phase === 'select') {
+        this._startingGame = false;
+        this._beginPublished = false;
+        document.getElementById('resultOverlay').classList.remove('show');
+        if (this.screen !== 'selectGameScreen') this.setScreen('selectGameScreen');
+        this.renderGameSelect(data.hostPick || data.selectedGame);
+      } else if (mp.phase === 'vote') {
+        this._startingGame = false;
+        this._beginPublished = false;
+        document.getElementById('resultOverlay').classList.remove('show');
+        if (this.screen !== 'voteScreen') this.setScreen('voteScreen');
+        this.renderVoteScreen();
+      } else if (mp.phase === 'ready') {
+        this._startingGame = false;
+        this._beginPublished = false;
+        document.getElementById('resultOverlay').classList.remove('show');
+        if (this.screen !== 'readyScreen') this.setScreen('readyScreen');
+        this.renderReadyScreen(data);
+        if (mp.isHost && !mp.solo) {
+          const ids = Object.keys(mp.players);
+          const allReady = ids.length >= 1 && ids.every(id => mp.players[id] && mp.players[id].gameReady);
+          if (allReady && ids.length >= 2) {
+            this._hostBeginPlaying(data.selectedGame);
+          }
+        }
+      } else if (mp.phase === 'playing') {
+        // Alle Clients (Host + Gäste) starten lokal, sobald gameState da ist
+        if (!mp.gameActive && data.selectedGame && data.gameState && data.gameState.startedAt) {
+          this._startingGame = true;
+          this.startMiniGame(data.selectedGame, data.gameState);
+        } else if (mp.gameActive && this.currentGame && data.gameState) {
+          this.currentGame.onRemoteState(data.gameState);
+        }
+      } else if (mp.phase === 'result') {
+        if (mp.gameActive) this.endCurrentGame(data.gameState || {});
+        else if (!document.getElementById('resultOverlay').classList.contains('show')) this.showResult(data.gameState || {});
+      }
+    };
+    mp.roomRef.on('value', mp.unsub);
+  },
+
+  renderLobby() {
+    const slotsEl = document.getElementById('lobbySlots');
+    slotsEl.innerHTML = '';
+    for (let i = 0; i < 4; i++) {
+      const entry = Object.entries(mp.players).find(([, p]) => p.slot === i);
+      const div = document.createElement('div');
+      if (entry) {
+        const [id, p] = entry;
+        div.className = 'player-slot filled' + (p.slot === 0 ? ' host' : '');
+        div.innerHTML = `<div class="avatar">${AVATARS[i]}</div><div class="name">${p.name}${id === mp.playerId ? ' (Du)' : ''}</div><div class="score-tag">${p.totalScore || 0} Pkt</div>`;
+      } else {
+        div.className = 'player-slot';
+        div.innerHTML = `<div class="avatar">👤</div><div class="name">Frei</div>`;
+      }
+      slotsEl.appendChild(div);
+    }
+    const count = Object.keys(mp.players).length;
+    const roundInfo = (mp.roundsPlayed > 0) ? ' · Runde ' + mp.roundsPlayed + '/' + MAX_ROUNDS + ' gespielt' : '';
+    document.getElementById('lobbyStatus').textContent = count < 2
+      ? 'Mindestens 2 Spieler nötig...'
+      : (count + ' / 4 Spieler · Session: ' + MAX_ROUNDS + ' Runden' + roundInfo);
+    const tbl = document.getElementById('lobbyScoreTable');
+    const sorted = Object.entries(mp.players).sort((a, b) => (b[1].totalScore || 0) - (a[1].totalScore || 0));
+    if (sorted.some(([, p]) => (p.totalScore || 0) > 0)) {
+      tbl.style.display = 'table';
+      tbl.innerHTML = '<tr><th class="rank">#</th><th>Spieler</th><th class="pts">Punkte</th></tr>' +
+        sorted.map(([id, p], i) => `<tr class="${id === mp.playerId ? 'me' : ''}"><td class="rank">${i + 1}</td><td>${p.name}</td><td class="pts">${p.totalScore || 0}</td></tr>`).join('');
+    } else tbl.style.display = 'none';
+
+    const startBtn = document.getElementById('lobbyStartBtn');
+    startBtn.style.display = (mp.isHost && count >= 2) ? 'block' : 'none';
+  },
+
+  async hostOpenGameSelect() {
+    if (!mp.isHost || !mp.roomRef) return;
+    const updates = { phase: 'select', selectedGame: null, hostPick: null, votes: null, gameState: null };
+    Object.keys(mp.players).forEach(id => { updates['players/' + id + '/gameReady'] = false; });
+    await mp.roomRef.update(updates);
+  },
+
+  renderGameSelect(selected) {
+    const grid = document.getElementById('gameSelectGrid');
+    grid.innerHTML = '';
+    this.selectedGameId = selected;
+    document.getElementById('selectSubtitle').textContent = mp.isHost
+      ? 'Du wählst – danach müssen alle bereit sein'
+      : 'Host wählt das nächste Spiel...';
+    MINI_GAMES.forEach(g => {
+      const card = document.createElement('div');
+      card.className = 'game-card' + (selected === g.id ? ' selected' : '');
+      card.innerHTML = `<div class="icon">${g.icon}</div><div class="gname">${g.name}</div><div class="gdesc">${g.desc}</div>`;
+      if (mp.isHost) {
+        card.onclick = () => {
+          this.selectedGameId = g.id;
+          this.renderGameSelect(g.id);
+          document.getElementById('startSelectedBtn').disabled = false;
+        };
+      }
+      grid.appendChild(card);
+    });
+    const btn = document.getElementById('startSelectedBtn');
+    btn.style.display = mp.isHost ? 'block' : 'none';
+    btn.disabled = !this.selectedGameId || !mp.isHost;
+    // Raum verlassen / Session beenden nur hier (Multiplayer + Host-Auswahl)
+    const leaveBtn = document.getElementById('selectLeaveBtn');
+    const endBtn = document.getElementById('selectEndSessionBtn');
+    if (leaveBtn) leaveBtn.style.display = mp.solo ? 'none' : 'block';
+    if (endBtn) endBtn.style.display = (mp.isHost && !mp.solo) ? 'block' : 'none';
+  },
+
+  async hostConfirmGame() {
+    if (!mp.isHost || !this.selectedGameId) return;
+    if (mp.solo) {
+      mp.selectedGame = this.selectedGameId;
+      this.setScreen('readyScreen');
+      this.renderReadyScreen({ selectedGame: this.selectedGameId });
+      return;
+    }
+    if (!mp.roomRef) return;
+    const updates = {
+      phase: 'ready',
+      selectedGame: this.selectedGameId,
+      hostPick: this.selectedGameId,
+      votes: null,
+      gameState: null
+    };
+    Object.keys(mp.players).forEach(id => {
+      updates['players/' + id + '/gameReady'] = false;
+    });
+    await mp.roomRef.update(updates);
+  },
+
+  renderVoteScreen() {
+    const votes = mp.votes || {};
+    const tallies = {};
+    MINI_GAMES.forEach(g => { tallies[g.id] = 0; });
+    Object.values(votes).forEach(v => { if (tallies[v] !== undefined) tallies[v]++; });
+
+    const grid = document.getElementById('voteGrid');
+    grid.innerHTML = '';
+    MINI_GAMES.forEach(g => {
+      const card = document.createElement('div');
+      const isMy = this.myVote === g.id || votes[mp.playerId] === g.id;
+      card.className = 'game-card' + (isMy ? ' selected' : '');
+      card.innerHTML = `<div class="vote-count">${tallies[g.id] || 0}</div><div class="icon">${g.icon}</div><div class="gname">${g.name}</div><div class="gdesc">${g.desc}</div>`;
+      card.onclick = () => this.castVote(g.id);
+      grid.appendChild(card);
+    });
+
+    const ids = Object.keys(mp.players);
+    const voted = Object.keys(votes).filter(id => mp.players[id]).length;
+    document.getElementById('voteStatus').textContent = voted + ' / ' + ids.length + ' haben abgestimmt';
+
+    const hostBtn = document.getElementById('hostFinalizeVoteBtn');
+    if (mp.isHost) {
+      hostBtn.style.display = 'block';
+      // host must also pick (selected)
+      this.selectedGameId = this.selectedGameId || votes[mp.playerId] || null;
+      hostBtn.disabled = !this.selectedGameId;
+      hostBtn.textContent = this.selectedGameId
+        ? 'HOST: „' + (MINI_GAMES.find(x => x.id === this.selectedGameId) || {}).name + '“ starten'
+        : 'HOST: Erst ein Spiel wählen';
+    } else {
+      hostBtn.style.display = 'none';
+    }
+  },
+
+  async castVote(gameId) {
+    this.myVote = gameId;
+    this.selectedGameId = gameId;
+    if (mp.solo) {
+      mp.selectedGame = gameId;
+      this.setScreen('readyScreen');
+      this.renderReadyScreen({ selectedGame: gameId });
+      return;
+    }
+    if (!mp.roomRef) return;
+    await mp.roomRef.child('votes/' + mp.playerId).set(gameId);
+    // host also sets selection for finalize button
+    if (mp.isHost) this.renderVoteScreen();
+  },
+
+  async hostFinalizeVote() {
+    if (!mp.isHost || !this.selectedGameId || !mp.roomRef) return;
+    const updates = {
+      phase: 'ready',
+      selectedGame: this.selectedGameId,
+      hostPick: this.selectedGameId,
+      gameState: null
+    };
+    Object.keys(mp.players).forEach(id => {
+      updates['players/' + id + '/gameReady'] = false;
+    });
+    await mp.roomRef.update(updates);
+  },
+
+  renderReadyScreen(data) {
+    const g = MINI_GAMES.find(x => x.id === (data.selectedGame || mp.selectedGame)) || MINI_GAMES[0];
+    document.getElementById('readyGameIcon').textContent = g.icon;
+    document.getElementById('readyGameName').textContent = g.name;
+    const howto = document.getElementById('readyHowto');
+    if (howto) howto.innerHTML = g.howto || g.desc;
+    const slotsEl = document.getElementById('readySlots');
+    slotsEl.innerHTML = '';
+    Object.entries(mp.players).sort((a, b) => a[1].slot - b[1].slot).forEach(([id, p]) => {
+      const div = document.createElement('div');
+      div.className = 'player-slot filled' + (p.gameReady ? ' ready-yes' : '');
+      div.innerHTML = `<div class="avatar">${AVATARS[p.slot] || '👤'}</div><div class="name">${p.name}${id === mp.playerId ? ' (Du)' : ''}</div><div class="score-tag">${p.gameReady ? '✓ Bereit' : 'Wartet...'}</div>`;
+      slotsEl.appendChild(div);
+    });
+    const me = mp.players[mp.playerId];
+    const btn = document.getElementById('readyBtn');
+    if (me && me.gameReady) {
+      btn.textContent = '✓ BEREIT';
+      btn.disabled = true;
+    } else {
+      btn.textContent = '✓ BEREIT';
+      btn.disabled = false;
+    }
+    const ids = Object.keys(mp.players);
+    const readyCount = ids.filter(id => mp.players[id] && mp.players[id].gameReady).length;
+    if (readyCount >= ids.length && ids.length >= 2) {
+      document.getElementById('readyStatus').textContent = 'Alle bereit – Spiel startet…';
+    } else {
+      document.getElementById('readyStatus').textContent = readyCount + ' / ' + ids.length + ' bereit – warten auf alle…';
+    }
+  },
+
+  async pressGameReady() {
+    if (mp.solo) {
+      const seed = Math.floor(Math.random() * 1e9);
+      const st = this._buildInitialGameState(mp.selectedGame || this.selectedGameId, seed);
+      this.startMiniGame(mp.selectedGame || this.selectedGameId, st);
+      return;
+    }
+    if (!mp.roomRef) return;
+    await mp.roomRef.child('players/' + mp.playerId + '/gameReady').set(true);
+  },
+
+  async _hostBeginPlaying(gameId) {
+    // Nur Host veröffentlicht den Start – _startingGame NICHT setzen,
+    // sonst startet der Host lokal nie (Bug: „startet automatisch“ ohne Spiel).
+    if (!mp.isHost || !mp.roomRef || this._beginPublished) return;
+    if (!gameId) return;
+    this._beginPublished = true;
+    try {
+      const seed = Math.floor(Math.random() * 1e9);
+      // etwas Puffer, damit alle Clients den State empfangen
+      const initial = this._buildInitialGameState(gameId, seed, Date.now() + 2000);
+      await mp.roomRef.update({
+        phase: 'playing',
+        selectedGame: gameId,
+        gameState: initial
+      });
+    } catch (e) {
+      console.error('Start fehlgeschlagen', e);
+      this._beginPublished = false;
+    }
+  },
+
+  _buildInitialGameState(gameId, seed, startedAt) {
+    const base = {
+      seed,
+      startedAt: startedAt || (Date.now() + 2000),
+      finished: false,
+      scores: {},
+      roundScores: {}
+    };
+    Object.keys(mp.players).forEach(id => { base.scores[id] = 0; base.roundScores[id] = 0; });
+    if (gameId === 'reaction') {
+      // Schnell-Tipp: R→Y→G→Blau, einmal tippen
+      base.redAt = base.startedAt;
+      base.yellowAt = base.startedAt + 1100;
+      base.greenAt = base.startedAt + 1100 + 800;
+      base.blueAt = base.startedAt + 1100 + 800 + 600 + Math.floor(Math.random() * 900);
+      base.tapped = {};
+    } else if (gameId === 'clicker') {
+      // Tipp-Battle: gleiche Ampel, dann 10s tippen
+      base.redAt = base.startedAt;
+      base.yellowAt = base.startedAt + 1100;
+      base.greenAt = base.startedAt + 1100 + 800;
+      base.blueAt = base.startedAt + 1100 + 800 + 600 + Math.floor(Math.random() * 700);
+      base.tapDuration = 10000;
+      base.clicks = {};
+      Object.keys(mp.players).forEach(id => { base.clicks[id] = 0; });
+    } else if (gameId === 'shooter') {
+      base.duration = 30000;
+      base.hits = {};
+      Object.keys(mp.players).forEach(id => { base.hits[id] = 0; });
+    } else if (gameId === 'flappy') {
+      base.duration = 22000;
+      base.distances = {};
+      Object.keys(mp.players).forEach(id => { base.distances[id] = 0; });
+    } else if (gameId === 'memory') {
+      base.duration = 30000;
+      base.board = this._genMemoryBoard(seed);
+    } else if (gameId === 'gallery') {
+      base.duration = 25000;
+    } else if (gameId === 'tetris') {
+      base.duration = 45000;
+    } else if (gameId === 'racer') {
+      base.duration = 30000;
+    } else if (gameId === 'runner') {
+      base.duration = 30000;
+    }
+    return base;
+  },
+
+  _genMemoryBoard(seed) {
+    const icons = ['🍎','🚗','⭐','🎸','🐶','🌙','⚽','🔥'];
+    let cards = [];
+    icons.forEach((ic, i) => { cards.push({ id: i, icon: ic }); cards.push({ id: i, icon: ic }); });
+    let s = seed;
+    for (let i = cards.length - 1; i > 0; i--) {
+      s = (s * 16807 + 7) % 2147483647;
+      const j = s % (i + 1);
+      [cards[i], cards[j]] = [cards[j], cards[i]];
+    }
+    return cards;
+  },
+
+  startMiniGame(gameId, gameState) {
+    mp.gameActive = true;
+    this._finishSent = false;
+    this._myReportedScore = null;
+    this.setScreen('none');
+    document.getElementById('hud').style.display = 'block';
+    document.getElementById('resultOverlay').classList.remove('show');
+    this._updateHud();
+    if (this.currentGame && this.currentGame.destroy) this.currentGame.destroy();
+    const factories = {
+      reaction: () => new SchnellTippGame(gameState),
+      clicker: () => new TippBattleGame(gameState),
+      shooter: () => new HamsterGame(gameState),
+      flappy: () => new FlappyGame(gameState),
+      memory: () => new MemoryGame(gameState),
+      gallery: () => new GalleryGame(gameState),
+      tetris: () => new TetrisGame(gameState),
+      racer: () => new RacerGame(gameState),
+      runner: () => new RunnerGame(gameState)
+    };
+    const f = factories[gameId];
+    if (!f) return;
+    this.currentGame = f();
+    this.currentGame.start();
+    this._loop();
+  },
+
+  _updateHud() {
+    const row = document.getElementById('hudPlayers');
+    row.innerHTML = '';
+    Object.entries(mp.players).forEach(([id, p]) => {
+      const d = document.createElement('div');
+      d.className = 'hud-player' + (id === mp.playerId ? ' me' : '');
+      d.style.borderColor = p.color || '#555';
+      const sc = (this.currentGame && this.currentGame.getScore) ? this.currentGame.getScore(id) : 0;
+      d.innerHTML = `${AVATARS[p.slot] || '👤'} ${p.name} <span class="hp">${sc}</span>`;
+      row.appendChild(d);
+    });
+  },
+
+  async publishGameState(partial) {
+    if (!mp.roomRef || !mp.active || mp.solo) return;
+    try { await mp.roomRef.child('gameState').update(partial); } catch (e) {}
+  },
+
+  /** Jeder spielt lokal fertig → meldet Punktzahl → warten bis alle fertig */
+  async reportMyScore(score) {
+    this._myReportedScore = score;
+    if (mp.solo) {
+      const scores = {};
+      scores[mp.playerId] = score;
+      if (!this._finishSent) this.finishGame(scores);
+      return;
+    }
+    try {
+      await this.publishGameState({
+        ['playerScores/' + mp.playerId]: score,
+        ['playerDone/' + mp.playerId]: true
+      });
+    } catch (e) {}
+    this.tryFinishWhenAllScored();
+  },
+
+  tryFinishWhenAllScored(gs) {
+    if (this._finishSent) return;
+    const state = gs || (this.currentGame && this.currentGame.state) || {};
+    const scores = Object.assign({}, state.playerScores || {});
+    if (this._myReportedScore !== undefined && this._myReportedScore !== null) {
+      scores[mp.playerId] = this._myReportedScore;
+    }
+    const ids = Object.keys(mp.players);
+    if (!ids.length) return;
+    if (!ids.every(id => scores[id] !== undefined && scores[id] !== null)) {
+      const waiting = ids.filter(id => scores[id] === undefined || scores[id] === null);
+      const names = waiting.map(id => (mp.players[id] && mp.players[id].name) || '?').join(', ');
+      const el = document.getElementById('roundInfo');
+      if (el) {
+        el.style.display = 'block';
+        el.textContent = 'Fertig – warte auf: ' + names;
+      }
+      return;
+    }
+    // Host beendet die Runde mit allen lokalen Ergebnissen
+    if (mp.isHost || mp.solo) this.finishGame(scores);
+  },
+
+  async finishGame(scores) {
+    if ((!mp.isHost && !mp.solo) || this._finishSent) return;
+    this._finishSent = true;
+    this._myReportedScore = null;
+    if (mp.solo) {
+      Object.entries(scores).forEach(([id, sc]) => {
+        if (mp.players[id]) mp.players[id].totalScore = (mp.players[id].totalScore || 0) + sc;
+      });
+      mp.roundsPlayed = (mp.roundsPlayed || 0) + 1;
+      this.endCurrentGame({ scores, roundScores: scores, finished: true });
+      return;
+    }
+    if (!mp.roomRef) return;
+    const newRounds = (mp.roundsPlayed || 0) + 1;
+    const sessionOver = newRounds >= MAX_ROUNDS;
+    const updates = {
+      phase: 'result',
+      roundsPlayed: newRounds,
+      sessionOver: sessionOver,
+      'gameState/finished': true,
+      'gameState/scores': scores,
+      'gameState/roundScores': scores,
+      votes: null,
+      hostPick: null
+    };
+    Object.entries(scores).forEach(([id, sc]) => {
+      const prev = (mp.players[id] && mp.players[id].totalScore) || 0;
+      updates['players/' + id + '/totalScore'] = prev + sc;
+      updates['players/' + id + '/gameReady'] = false;
+    });
+    mp.roundsPlayed = newRounds;
+    mp.sessionOver = sessionOver;
+    await mp.roomRef.update(updates);
+  },
+
+  endCurrentGame(gameState) {
+    mp.gameActive = false;
+    this._finishSent = false;
+    this._startingGame = false;
+    if (this.currentGame && this.currentGame.destroy) this.currentGame.destroy();
+    this.currentGame = null;
+    cancelAnimationFrame(this.animFrame);
+    this.showResult(gameState);
+  },
+
+  showResult(gameState) {
+    document.getElementById('resultOverlay').classList.add('show');
+    const isFinal = !mp.solo && (mp.sessionOver || (mp.roundsPlayed || 0) >= MAX_ROUNDS);
+    const g = MINI_GAMES.find(x => x.id === mp.selectedGame);
+    const roundLabel = mp.solo
+      ? (g ? g.name + ' – diese Runde' : 'Diese Runde')
+      : 'Runde ' + (mp.roundsPlayed || 1) + ' / ' + MAX_ROUNDS + (g ? ' · ' + g.name : '');
+
+    if (isFinal) {
+      document.getElementById('resultTitle').textContent = 'Session beendet!';
+      document.getElementById('resultSubtitle').textContent = MAX_ROUNDS + ' Runden geschafft – Endstand';
+      document.getElementById('resultTotalLabel').textContent = 'Endtabelle';
+    } else {
+      document.getElementById('resultTitle').textContent = 'Runde beendet!';
+      document.getElementById('resultSubtitle').textContent = roundLabel;
+      document.getElementById('resultTotalLabel').textContent = 'Gesamtpunkte (Gruppe)';
+    }
+
+    const roundScores = (gameState && (gameState.roundScores || gameState.scores)) || {};
+    const sortedRound = Object.entries(roundScores).sort((a, b) => b[1] - a[1]);
+    document.getElementById('resultRoundTable').innerHTML =
+      '<tr><th class="rank">#</th><th>Spieler</th><th class="pts">Pkt</th></tr>' +
+      sortedRound.map(([id, sc], i) => {
+        const name = (mp.players[id] && mp.players[id].name) || id;
+        return `<tr class="${id === mp.playerId ? 'me' : ''}"><td class="rank">${i + 1}</td><td>${name}</td><td class="pts">+${sc}</td></tr>`;
+      }).join('');
+
+    const sortedTotal = Object.entries(mp.players).sort((a, b) => (b[1].totalScore || 0) - (a[1].totalScore || 0));
+    document.getElementById('resultTotalTable').innerHTML =
+      '<tr><th class="rank">#</th><th>Spieler</th><th class="pts">Gesamt</th></tr>' +
+      sortedTotal.map(([id, p], i) =>
+        `<tr class="${id === mp.playerId ? 'me' : ''}"><td class="rank">${i + 1}</td><td>${p.name}</td><td class="pts">${p.totalScore || 0}</td></tr>`
+      ).join('');
+
+    const nextBtn = document.getElementById('resultNextBtn');
+    const restartBtn = document.getElementById('resultRestartBtn');
+    const leaveBtn = document.getElementById('resultLeaveBtn');
+
+    if (isFinal) {
+      nextBtn.style.display = 'none';
+      restartBtn.style.display = 'inline-block';
+      leaveBtn.style.display = 'inline-block';
+      // Host startet neu, Gäste sehen Restart auch (Host muss klicken) – beide dürfen verlassen
+      if (!mp.isHost) {
+        restartBtn.textContent = 'Warten auf Host (Lobby)...';
+        restartBtn.disabled = true;
+      } else {
+        restartBtn.textContent = 'Lobby neu starten';
+        restartBtn.disabled = false;
+      }
+      leaveBtn.disabled = false;
+    } else {
+      nextBtn.style.display = 'inline-block';
+      restartBtn.style.display = 'none';
+      leaveBtn.style.display = 'none';
+      if (mp.solo) {
+        nextBtn.textContent = 'Zur Abstimmung';
+        nextBtn.disabled = false;
+      } else if (mp.isHost) {
+        nextBtn.textContent = 'Zur Abstimmung (' + (mp.roundsPlayed || 0) + '/' + MAX_ROUNDS + ')';
+        nextBtn.disabled = false;
+      } else {
+        nextBtn.textContent = 'Warten auf Host…';
+        nextBtn.disabled = true;
+      }
+    }
+  },
+
+  async afterResult() {
+    if (!mp.solo && (mp.sessionOver || (mp.roundsPlayed || 0) >= MAX_ROUNDS)) return;
+    document.getElementById('resultOverlay').classList.remove('show');
+    this.myVote = null;
+    this.selectedGameId = null;
+    if (mp.solo) {
+      this.setScreen('voteScreen');
+      this.renderVoteScreen();
+      return;
+    }
+    if (!mp.isHost || !mp.roomRef) return;
+    const updates = { phase: 'vote', votes: {}, selectedGame: null, hostPick: null, gameState: null };
+    Object.keys(mp.players).forEach(id => {
+      updates['players/' + id + '/gameReady'] = false;
+    });
+    await mp.roomRef.update(updates);
+  },
+
+  /** Nach 10 Runden: Punkte zurücksetzen, zurück in die Lobby */
+  async restartToLobby() {
+    document.getElementById('resultOverlay').classList.remove('show');
+    if (mp.solo) {
+      mp.roundsPlayed = 0;
+      mp.sessionOver = false;
+      Object.keys(mp.players).forEach(id => { mp.players[id].totalScore = 0; });
+      this.setScreen('selectGameScreen');
+      this.renderGameSelect(null);
+      return;
+    }
+    if (!mp.isHost || !mp.roomRef) return;
+    const updates = {
+      phase: 'lobby',
+      roundsPlayed: 0,
+      sessionOver: false,
+      selectedGame: null,
+      hostPick: null,
+      votes: null,
+      gameState: null
+    };
+    Object.keys(mp.players).forEach(id => {
+      updates['players/' + id + '/totalScore'] = 0;
+      updates['players/' + id + '/gameReady'] = false;
+    });
+    mp.roundsPlayed = 0;
+    mp.sessionOver = false;
+    await mp.roomRef.update(updates);
+  },
+
+  cleanupRoom() {
+    mp.gameActive = false;
+    this._startingGame = false;
+    this._beginPublished = false;
+    this._finishSent = false;
+    this.myVote = null;
+    if (this.currentGame && this.currentGame.destroy) this.currentGame.destroy();
+    this.currentGame = null;
+    cancelAnimationFrame(this.animFrame);
+    document.getElementById('resultOverlay').classList.remove('show');
+    if (mp.roomRef && mp.playerId && !mp.solo) {
+      try {
+        mp.roomRef.child('players/' + mp.playerId).remove();
+        if (mp.isHost) mp.roomRef.remove();
+      } catch (e) {}
+    }
+    if (mp.unsub && mp.roomRef) { try { mp.roomRef.off('value', mp.unsub); } catch (e) {} }
+    mp.active = false; mp.isHost = false; mp.solo = false;
+    mp.roomRef = null; mp.unsub = null; mp.players = {}; mp.phase = 'lobby';
+    mp.votes = {}; mp.selectedGame = null;
+  },
+
+  startSoloPractice() {
+    mp.solo = true; mp.active = true; mp.isHost = true; mp.playerId = 'solo';
+    mp.myName = this.getName();
+    mp.players = { solo: { name: mp.myName, slot: 0, gameReady: false, connected: true, totalScore: 0, color: COLORS[0] } };
+    this.setScreen('selectGameScreen');
+    this.renderGameSelect(null);
+    document.getElementById('selectLeaveBtn').style.display = 'none';
+    document.getElementById('selectEndSessionBtn').style.display = 'none';
+  },
+
+  _loop() {
+    if (!mp.gameActive || !this.currentGame) return;
+    this.currentGame.update();
+    this.currentGame.draw(ctx);
+    this._updateHud();
+    this.animFrame = requestAnimationFrame(() => this._loop());
+  }
+};
+
+
+// Kurzer gemeinsamer Countdown, danach spielt jeder lokal unabhängig
+function waitForStart(state, cb) {
+  const check = () => {
+    if (Date.now() >= (state.startedAt || 0)) cb();
+    else {
+      const left = Math.ceil(((state.startedAt || 0) - Date.now()) / 1000);
+      const el = document.getElementById('roundInfo');
+      if (el) {
+        el.style.display = 'block';
+        el.textContent = left > 0 ? ('Start in ' + left + '…') : ' ';
+      }
+      requestAnimationFrame(check);
+    }
+  };
+  check();
+}
+
+// Schnell-Tipp: eigener Ampel-Countdown, einmal tippen bei Blau
+class SchnellTippGame {
+  constructor(state) {
+    this.state = state;
+    this.begun = false;
+    this.tapped = false;
+    this.myMs = null;
+    this.finished = false;
+    this.phase = 'wait';
+    this.redAt = 0; this.yellowAt = 0; this.greenAt = 0; this.blueAt = 0;
+  }
+  start() {
+    document.getElementById('roundInfo').style.display = 'block';
+    document.getElementById('roundInfo').textContent = ' ';
+    document.getElementById('touchArea').style.display = 'block';
+    document.getElementById('touchArea').style.pointerEvents = 'auto';
+    const tap = (e) => { e.preventDefault(); e.stopPropagation(); this.onTap(); };
+    document.getElementById('touchArea').ontouchstart = tap;
+    document.getElementById('touchArea').onmousedown = tap;
+    waitForStart(this.state, () => {
+      this.begun = true;
+      const t0 = Date.now();
+      const extra = 400 + Math.floor(Math.random() * 900);
+      this.redAt = t0;
+      this.yellowAt = t0 + 1100;
+      this.greenAt = t0 + 1900;
+      this.blueAt = t0 + 2500 + extra;
+    });
+  }
+  onTap() {
+    if (!this.begun || this.tapped || this.finished) return;
+    const now = Date.now();
+    if (now < this.blueAt) {
+      this.tapped = true;
+      this.myMs = 99999;
+      this._done(0);
+      return;
+    }
+    this.tapped = true;
+    this.myMs = now - this.blueAt;
+    this._done(Math.max(0, 1000 - Math.min(this.myMs, 1000)));
+  }
+  _done(score) {
+    this.finished = true;
+    app.reportMyScore(score);
+  }
+  onRemoteState(gs) {
+    this.state = Object.assign(this.state, gs);
+    app.tryFinishWhenAllScored(this.state);
+  }
+  update() {
+    if (!this.begun) return;
+    const now = Date.now();
+    if (now < this.yellowAt) this.phase = 'red';
+    else if (now < this.greenAt) this.phase = 'yellow';
+    else if (now < this.blueAt) this.phase = 'green';
+    else this.phase = 'blue';
+  }
+  draw(ctx) {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const cx = canvas.width / 2, cy = canvas.height * 0.42;
+    const r = Math.min(100, canvas.width * 0.24);
+    let col = '#333';
+    if (this.begun) {
+      if (this.phase === 'red') col = '#e74c3c';
+      else if (this.phase === 'yellow') col = '#f1c40f';
+      else if (this.phase === 'green') col = '#2ecc71';
+      else col = '#3498db';
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+  }
+  getScore(id) {
+    if (id === mp.playerId) {
+      if (this.myMs === null) return '-';
+      return this.myMs >= 99999 ? 0 : Math.max(0, 1000 - Math.min(this.myMs, 1000));
+    }
+    const sc = (this.state.playerScores || {})[id];
+    return sc !== undefined ? sc : '-';
+  }
+  destroy() {
+    document.getElementById('touchArea').style.display = 'none';
+    document.getElementById('touchArea').ontouchstart = null;
+    document.getElementById('touchArea').onmousedown = null;
+  }
+}
+
+// Tipp-Battle: eigene Ampel, bei Blau 10s tippen
+class TippBattleGame {
+  constructor(state) {
+    this.state = state;
+    this.begun = false;
+    this.phase = 'wait';
+    this.localClicks = 0;
+    this.canTap = false;
+    this.tapEnd = 0;
+    this.finished = false;
+    this.redAt = 0; this.yellowAt = 0; this.greenAt = 0; this.blueAt = 0;
+  }
+  start() {
+    document.getElementById('gameTimer').style.display = 'block';
+    document.getElementById('roundInfo').style.display = 'block';
+    document.getElementById('roundInfo').textContent = ' ';
+    document.getElementById('touchArea').style.display = 'block';
+    document.getElementById('touchArea').style.pointerEvents = 'auto';
+    const tap = (e) => { e.preventDefault(); e.stopPropagation(); this.onTap(); };
+    document.getElementById('touchArea').ontouchstart = tap;
+    document.getElementById('touchArea').onmousedown = tap;
+    waitForStart(this.state, () => {
+      this.begun = true;
+      const t0 = Date.now();
+      const extra = 300 + Math.floor(Math.random() * 700);
+      this.redAt = t0;
+      this.yellowAt = t0 + 1100;
+      this.greenAt = t0 + 1900;
+      this.blueAt = t0 + 2500 + extra;
+    });
+  }
+  onTap() {
+    if (!this.begun || this.finished) return;
+    const now = Date.now();
+    if (now < this.blueAt) return;
+    if (!this.canTap) {
+      this.canTap = true;
+      this.tapEnd = this.blueAt + (this.state.tapDuration || 10000);
+    }
+    if (now > this.tapEnd) return;
+    this.localClicks++;
+  }
+  onRemoteState(gs) {
+    this.state = Object.assign(this.state, gs);
+    app.tryFinishWhenAllScored(this.state);
+  }
+  update() {
+    if (!this.begun) return;
+    const now = Date.now();
+    if (now < this.yellowAt) this.phase = 'red';
+    else if (now < this.greenAt) this.phase = 'yellow';
+    else if (now < this.blueAt) this.phase = 'green';
+    else {
+      this.phase = 'blue';
+      if (!this.canTap) {
+        this.canTap = true;
+        this.tapEnd = this.blueAt + (this.state.tapDuration || 10000);
+      }
+    }
+    if (this.canTap && !this.finished) {
+      const left = Math.max(0, this.tapEnd - now);
+      document.getElementById('gameTimer').textContent = (left / 1000).toFixed(1) + 's';
+      if (left <= 0) {
+        this.finished = true;
+        app.reportMyScore(this.localClicks);
+      }
+    } else if (!this.canTap) {
+      document.getElementById('gameTimer').textContent = '';
+    }
+  }
+  draw(ctx) {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const cx = canvas.width / 2, cy = canvas.height * 0.38;
+    const r = Math.min(90, canvas.width * 0.22);
+    let col = '#333';
+    if (this.begun) {
+      if (this.phase === 'red') col = '#e74c3c';
+      else if (this.phase === 'yellow') col = '#f1c40f';
+      else if (this.phase === 'green') col = '#2ecc71';
+      else col = '#3498db';
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    if (this.canTap) {
+      ctx.fillStyle = '#ffd93d';
+      ctx.font = 'bold 48px Fredoka One';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(this.localClicks), cx, cy + r + 60);
+    }
+  }
+  getScore(id) {
+    if (id === mp.playerId) return this.localClicks;
+    const sc = (this.state.playerScores || {})[id];
+    return sc !== undefined ? sc : '-';
+  }
+  destroy() {
+    document.getElementById('touchArea').style.display = 'none';
+    document.getElementById('touchArea').ontouchstart = null;
+    document.getElementById('touchArea').onmousedown = null;
+  }
+}
+
+// Hamster: eigener 30s-Timer, 1 Hamster bis Treffer
+class HamsterGame {
+  constructor(state) {
+    this.state = state;
+    this.endAt = 0;
+    this.begun = false;
+    this.finished = false;
+    this.localHits = 0;
+    this.holes = [];
+    this.seed = (state.seed || 1) ^ (mp.playerId || '').length * 97;
+    this.nextSpawn = 0;
+  }
+  start() {
+    document.getElementById('gameTimer').style.display = 'block';
+    document.getElementById('roundInfo').style.display = 'block';
+    document.getElementById('roundInfo').textContent = ' ';
+    document.getElementById('touchArea').style.display = 'block';
+    document.getElementById('touchArea').style.pointerEvents = 'auto';
+    const hit = (e) => {
+      e.preventDefault();
+      if (!this.begun || this.finished) return;
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches ? e.touches[0] : e;
+      const x = (t.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (t.clientY - rect.top) * (canvas.height / rect.height);
+      this.tryHit(x, y);
+    };
+    document.getElementById('touchArea').ontouchstart = hit;
+    document.getElementById('touchArea').onmousedown = hit;
+    this.holes = [];
+    for (let i = 0; i < 9; i++) this.holes.push({ up: false });
+    waitForStart(this.state, () => {
+      this.begun = true;
+      this.endAt = Date.now() + (this.state.duration || 30000);
+      this.nextSpawn = Date.now();
+    });
+  }
+  _rand() {
+    this.seed = (this.seed * 16807 + 7) % 2147483647;
+    return (this.seed % 10000) / 10000;
+  }
+  _layout() {
+    const size = Math.min(canvas.width * 0.72, canvas.height * 0.55);
+    const ox = (canvas.width - size) / 2;
+    const oy = (canvas.height - size) / 2 + 10;
+    const cell = size / 3;
+    return { ox, oy, cell, size };
+  }
+  tryHit(x, y) {
+    const L = this._layout();
+    const col = Math.floor((x - L.ox) / L.cell);
+    const row = Math.floor((y - L.oy) / L.cell);
+    if (col < 0 || col >= 3 || row < 0 || row >= 3) return;
+    const idx = row * 3 + col;
+    if (this.holes[idx] && this.holes[idx].up) {
+      this.holes[idx].up = false;
+      this.localHits++;
+      this.nextSpawn = Date.now() + 280 + this._rand() * 400;
+    }
+  }
+  onRemoteState(gs) {
+    this.state = Object.assign(this.state, gs);
+    app.tryFinishWhenAllScored(this.state);
+  }
+  update() {
+    if (!this.begun || this.finished) return;
+    const left = Math.max(0, this.endAt - Date.now());
+    document.getElementById('gameTimer').textContent = (left / 1000).toFixed(1) + 's';
+    const now = Date.now();
+    const anyUp = this.holes.some(h => h.up);
+    if (!anyUp && now >= this.nextSpawn) {
+      this.holes[Math.floor(this._rand() * 9)].up = true;
+      this.nextSpawn = now + 999999;
+    }
+    if (left <= 0) {
+      this.finished = true;
+      app.reportMyScore(this.localHits * 15);
+    }
+  }
+  draw(ctx) {
+    ctx.fillStyle = '#1a3a1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const L = this._layout();
+    for (let i = 0; i < 9; i++) {
+      const col = i % 3, row = Math.floor(i / 3);
+      const cx = L.ox + col * L.cell + L.cell / 2;
+      const cy = L.oy + row * L.cell + L.cell / 2;
+      const holeR = L.cell * 0.28;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 6, holeR, holeR * 0.55, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#0d1a0d';
+      ctx.fill();
+      if (this.holes[i].up) {
+        ctx.beginPath();
+        ctx.arc(cx, cy - holeR * 0.15, holeR * 0.85, 0, Math.PI * 2);
+        ctx.fillStyle = '#c49a6c';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx - holeR * 0.55, cy - holeR * 0.55, holeR * 0.28, 0, Math.PI * 2);
+        ctx.arc(cx + holeR * 0.55, cy - holeR * 0.55, holeR * 0.28, 0, Math.PI * 2);
+        ctx.fillStyle = '#b8895a';
+        ctx.fill();
+        ctx.fillStyle = '#222';
+        ctx.beginPath();
+        ctx.arc(cx - holeR * 0.28, cy - 4, 3, 0, Math.PI * 2);
+        ctx.arc(cx + holeR * 0.28, cy - 4, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#e67e22';
+        ctx.beginPath();
+        ctx.arc(cx, cy + 6, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  getScore(id) {
+    if (id === mp.playerId) return this.localHits * 15;
+    const sc = (this.state.playerScores || {})[id];
+    return sc !== undefined ? sc : '-';
+  }
+  destroy() {
+    document.getElementById('touchArea').style.display = 'none';
+    document.getElementById('touchArea').ontouchstart = null;
+    document.getElementById('touchArea').onmousedown = null;
+  }
+}
+
+// Flappy: eigene Distanz / eigener Timer
+class FlappyGame {
+  constructor(state) {
+    this.state = state;
+    this.endAt = 0; this.y = 0; this.vy = 0; this.dist = 0;
+    this.dead = false; this.finished = false; this.begun = false;
+    this.pipes = []; this.seed = (state.seed || 1) + (mp.mySlot || 0) * 13;
+    this.nextPipeDist = 220; this.birdX = 70;
+  }
+  start() {
+    this.y = canvas.height * 0.45; this.vy = 0; this.dist = 0;
+    this.dead = false; this.pipes = []; this.nextPipeDist = 220;
+    document.getElementById('gameTimer').style.display = 'block';
+    document.getElementById('roundInfo').style.display = 'block';
+    document.getElementById('roundInfo').textContent = ' ';
+    document.getElementById('touchArea').style.display = 'block';
+    document.getElementById('touchArea').style.pointerEvents = 'auto';
+    const flap = (e) => { e.preventDefault(); if (!this.begun || this.dead || this.finished) return; this.vy = -6.8; };
+    document.getElementById('touchArea').ontouchstart = flap;
+    document.getElementById('touchArea').onmousedown = flap;
+    waitForStart(this.state, () => {
+      this.begun = true;
+      this.endAt = Date.now() + (this.state.duration || 22000);
+    });
+  }
+  _rand() {
+    this.seed = (this.seed * 16807 + 7) % 2147483647;
+    return (this.seed % 10000) / 10000;
+  }
+  onRemoteState(gs) {
+    this.state = Object.assign(this.state, gs);
+    app.tryFinishWhenAllScored(this.state);
+  }
+  update() {
+    if (!this.begun || this.finished) return;
+    const left = Math.max(0, this.endAt - Date.now());
+    document.getElementById('gameTimer').textContent = (left / 1000).toFixed(1) + 's';
+    if (!this.dead) {
+      this.vy += 0.32; this.y += this.vy; this.dist += 3.5;
+      const progress = Math.min(1, this.dist / 3000);
+      const gap = 195 - progress * 75;
+      if (this.dist > this.nextPipeDist) {
+        this.nextPipeDist = this.dist + 190 + this._rand() * 60;
+        const topH = 40 + this._rand() * (canvas.height - 160 - gap);
+        this.pipes.push({ x: this.dist + canvas.width - 40, topH, gap });
+      }
+      if (this.y < 16) { this.y = 16; this.vy = 0; }
+      if (this.y > canvas.height - 30) { this.y = canvas.height - 30; this.dead = true; }
+      const bx = this.birdX;
+      for (const p of this.pipes) {
+        const sx = p.x - this.dist + this.birdX;
+        if (bx + 14 > sx && bx - 14 < sx + 44) {
+          if (this.y - 12 < p.topH || this.y + 12 > p.topH + p.gap) this.dead = true;
+        }
+      }
+      this.pipes = this.pipes.filter(p => p.x > this.dist - 80);
+    }
+    // Bei Absturz: Distanz zählt weiter bis Zeitende (oder sofort melden?)
+    // User: warten bis Zeit/Reichweite – bei tot warten bis Timer
+    if (left <= 0) {
+      this.finished = true;
+      app.reportMyScore(Math.floor(this.dist / 8));
+    }
+  }
+  draw(ctx) {
+    const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    g.addColorStop(0, '#5dade2'); g.addColorStop(0.55, '#85c1e9'); g.addColorStop(1, '#aed6f1');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    for (let i = 0; i < 5; i++) {
+      const cx = ((i * 140 + this.dist * 0.15) % (canvas.width + 80)) - 40;
+      const cy = 40 + (i * 37) % 80;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+      ctx.arc(cx + 20, cy + 4, 16, 0, Math.PI * 2);
+      ctx.arc(cx - 18, cy + 6, 14, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#27ae60';
+    ctx.fillRect(0, canvas.height - 24, canvas.width, 24);
+    this.pipes.forEach(p => {
+      const sx = p.x - this.dist + this.birdX;
+      if (sx < -50 || sx > canvas.width + 50) return;
+      ctx.fillStyle = '#1e8449';
+      ctx.fillRect(sx, 0, 44, p.topH);
+      ctx.fillRect(sx, p.topH + p.gap, 44, canvas.height - 24 - (p.topH + p.gap));
+      ctx.fillStyle = '#2ecc71';
+      ctx.fillRect(sx - 3, p.topH - 12, 50, 14);
+      ctx.fillRect(sx - 3, p.topH + p.gap, 50, 14);
+    });
+    ctx.save();
+    ctx.translate(this.birdX, this.y);
+    ctx.rotate(Math.max(-0.6, Math.min(0.8, this.vy * 0.06)));
+    ctx.fillStyle = this.dead ? '#888' : '#f4d03f';
+    ctx.beginPath(); ctx.ellipse(0, 0, 16, 12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(6, -3, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(7, -3, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e67e22';
+    ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(22, 3); ctx.lineTo(14, 6); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    if (this.dead && !this.finished) {
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+  getScore(id) {
+    if (id === mp.playerId) return Math.floor(this.dist / 8);
+    const sc = (this.state.playerScores || {})[id];
+    return sc !== undefined ? sc : '-';
+  }
+  destroy() {
+    document.getElementById('touchArea').style.display = 'none';
+    document.getElementById('touchArea').ontouchstart = null;
+    document.getElementById('touchArea').onmousedown = null;
+  }
+}
+
+// Memory: jeder eigenes Board (gleicher Seed), allein spielen
+class MemoryGame {
+  constructor(state) {
+    this.state = state;
+    this.board = state.board || [];
+    this.matched = [];
+    this.localFlip = [];
+    this.lock = false;
+    this.begun = false;
+    this.pairs = 0;
+    this.finished = false;
+    this.endAt = 0;
+  }
+  start() {
+    document.getElementById('gameTimer').style.display = 'block';
+    document.getElementById('roundInfo').style.display = 'block';
+    document.getElementById('touchArea').style.display = 'block';
+    document.getElementById('touchArea').style.pointerEvents = 'auto';
+    document.getElementById('touchArea').onclick = (e) => this.onTap(e);
+    document.getElementById('touchArea').ontouchend = (e) => { e.preventDefault(); this.onTap(e); };
+    waitForStart(this.state, () => {
+      this.begun = true;
+      this.endAt = Date.now() + (this.state.duration || 30000);
+      document.getElementById('roundInfo').textContent = ' ';
+    });
+  }
+  onTap(e) {
+    if (!this.begun || this.lock || this.finished) return;
+    const rect = canvas.getBoundingClientRect();
+    const t = e.changedTouches ? e.changedTouches[0] : e;
+    const x = (t.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (t.clientY - rect.top) * (canvas.height / rect.height);
+    const cols = 4;
+    const cw = Math.min(72, (canvas.width - 40) / cols);
+    const ox = (canvas.width - cols * cw) / 2;
+    const oy = 90;
+    const col = Math.floor((x - ox) / cw);
+    const row = Math.floor((y - oy) / cw);
+    if (col < 0 || col >= 4 || row < 0 || row >= 4) return;
+    const idx = row * 4 + col;
+    if (this.matched.includes(idx) || this.localFlip.includes(idx)) return;
+    this.localFlip.push(idx);
+    if (this.localFlip.length === 2) {
+      this.lock = true;
+      const [a, b] = this.localFlip;
+      const match = this.board[a] && this.board[b] && this.board[a].id === this.board[b].id;
+      setTimeout(() => {
+        if (match) {
+          this.matched.push(a, b);
+          this.pairs++;
+        }
+        this.localFlip = [];
+        this.lock = false;
+        // Alle Paare vor Timer: trotzdem bis Timer oder sofort melden
+        if (this.matched.length >= 16 && !this.finished) {
+          this.finished = true;
+          app.reportMyScore(this.pairs * 50);
+        }
+      }, 450);
+    }
+  }
+  onRemoteState(gs) {
+    this.state = Object.assign(this.state, gs);
+    app.tryFinishWhenAllScored(this.state);
+  }
+  update() {
+    if (!this.begun || this.finished) return;
+    const left = Math.max(0, this.endAt - Date.now());
+    document.getElementById('gameTimer').textContent = (left / 1000).toFixed(1) + 's';
+    if (left <= 0) {
+      this.finished = true;
+      app.reportMyScore(this.pairs * 50);
+    }
+  }
+  draw(ctx) {
+    if (woodImg.complete && woodImg.naturalWidth > 0) {
+      try {
+        ctx.drawImage(woodImg, 0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      } catch (e) {
+        ctx.fillStyle = '#3e2723';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+    } else {
+      ctx.fillStyle = '#3e2723';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    const cols = 4;
+    const cw = Math.min(72, (canvas.width - 40) / cols);
+    const ox = (canvas.width - cols * cw) / 2;
+    const oy = 90;
+    for (let i = 0; i < 16; i++) {
+      const col = i % 4, row = Math.floor(i / 4);
+      const x = ox + col * cw, y = oy + row * cw;
+      const show = this.matched.includes(i) || this.localFlip.includes(i);
+      ctx.fillStyle = show ? 'rgba(30,20,10,0.85)' : 'rgba(60,40,25,0.9)';
+      ctx.strokeStyle = '#ffd93d';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x + 3, y + 3, cw - 6, cw - 6, 8);
+      else ctx.rect(x + 3, y + 3, cw - 6, cw - 6);
+      ctx.fill(); ctx.stroke();
+      if (show && this.board[i]) {
+        ctx.font = (cw * 0.42) + 'px serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.board[i].icon, x + cw / 2, y + cw / 2);
+      }
+    }
+  }
+  getScore(id) {
+    if (id === mp.playerId) return this.pairs * 50;
+    const sc = (this.state.playerScores || {})[id];
+    return sc !== undefined ? sc : '-';
+  }
+  destroy() { document.getElementById('touchArea').style.display = 'none'; }
+}
+
+// Tresen: eigener Timer, eigene Treffer
+class GalleryGame {
+  constructor(state) {
+    this.state = state;
+    this.endAt = 0; this.begun = false; this.finished = false;
+    this.localHits = 0; this.localMisses = 0;
+    this.figures = [
+      { up: false, life: 0, falling: 0 },
+      { up: false, life: 0, falling: 0 },
+      { up: false, life: 0, falling: 0 }
+    ];
+    this.seed = (state.seed || 1) + (mp.mySlot || 0) * 31;
+    this.nextSpawn = 0;
+    this.booms = [];
+  }
+  start() {
+    document.getElementById('gameTimer').style.display = 'block';
+    document.getElementById('roundInfo').style.display = 'block';
+    document.getElementById('roundInfo').textContent = ' ';
+    document.getElementById('touchArea').style.display = 'block';
+    document.getElementById('touchArea').style.pointerEvents = 'auto';
+    const shoot = (e) => {
+      e.preventDefault();
+      if (!this.begun || this.finished) return;
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches ? e.touches[0] : e;
+      const x = (t.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (t.clientY - rect.top) * (canvas.height / rect.height);
+      this.tryShoot(x, y);
+    };
+    document.getElementById('touchArea').ontouchstart = shoot;
+    document.getElementById('touchArea').onmousedown = shoot;
+    waitForStart(this.state, () => {
+      this.begun = true;
+      this.endAt = Date.now() + (this.state.duration || 25000);
+      this.nextSpawn = Date.now() + 400;
+    });
+  }
+  _rand() {
+    this.seed = (this.seed * 16807 + 7) % 2147483647;
+    return (this.seed % 10000) / 10000;
+  }
+  tryShoot(x, y) {
+    const counterY = canvas.height * 0.62;
+    let hit = false;
+    for (let i = 0; i < 3; i++) {
+      const f = this.figures[i];
+      if (!f.up || f.falling > 0) continue;
+      const fx = canvas.width * (0.2 + i * 0.3);
+      const fy = counterY - 50;
+      const dx = x - fx, dy = y - fy;
+      if (dx * dx + dy * dy < 52 * 52) {
+        f.falling = 1;
+        f.up = false;
+        this.localHits++;
+        hit = true;
+        break;
+      }
+    }
+    if (!hit) {
+      this.localMisses++;
+      this.booms.push({ x, y: Math.min(y, counterY - 20), life: 40 });
+    }
+  }
+  onRemoteState(gs) {
+    this.state = Object.assign(this.state, gs);
+    app.tryFinishWhenAllScored(this.state);
+  }
+  update() {
+    if (!this.begun || this.finished) return;
+    const left = Math.max(0, this.endAt - Date.now());
+    document.getElementById('gameTimer').textContent = (left / 1000).toFixed(1) + 's';
+    const now = Date.now();
+    if (now >= this.nextSpawn) {
+      const count = 1 + Math.floor(this._rand() * 3);
+      const order = [0, 1, 2].sort(() => this._rand() - 0.5);
+      for (let i = 0; i < 3; i++) {
+        if (i < count && !this.figures[order[i]].up && this.figures[order[i]].falling <= 0) {
+          this.figures[order[i]].up = true;
+          this.figures[order[i]].life = 1000 + this._rand() * 800;
+          this.figures[order[i]].falling = 0;
+        }
+      }
+      this.nextSpawn = now + 1100 + this._rand() * 800;
+    }
+    this.figures.forEach(f => {
+      if (f.up) {
+        f.life -= 16;
+        if (f.life <= 0) f.up = false;
+      }
+      if (f.falling > 0) {
+        f.falling += 0.08;
+        if (f.falling > 1.4) f.falling = 0;
+      }
+    });
+    this.booms.forEach(b => b.life--);
+    this.booms = this.booms.filter(b => b.life > 0);
+    if (left <= 0) {
+      this.finished = true;
+      app.reportMyScore(Math.max(0, this.localHits * 20 - this.localMisses * 8));
+    }
+  }
+  draw(ctx) {
+    ctx.fillStyle = '#2c3e50';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#34495e';
+    for (let y = 0; y < canvas.height * 0.62; y += 18) ctx.fillRect(0, y, canvas.width, 2);
+    const counterY = canvas.height * 0.62;
+    for (let i = 0; i < 3; i++) {
+      const f = this.figures[i];
+      const fx = canvas.width * (0.2 + i * 0.3);
+      if (f.up || f.falling > 0) {
+        ctx.save();
+        ctx.translate(fx, counterY - 20);
+        if (f.falling > 0) {
+          ctx.translate(0, f.falling * 40);
+          ctx.rotate((i % 2 === 0 ? -1 : 1) * f.falling * 1.2);
+        }
+        ctx.fillStyle = '#e74c3c';
+        ctx.beginPath();
+        ctx.ellipse(0, -35, 22, 28, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#f5cba7';
+        ctx.beginPath();
+        ctx.arc(0, -68, 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#222';
+        ctx.beginPath();
+        ctx.arc(-6, -70, 2.5, 0, Math.PI * 2);
+        ctx.arc(6, -70, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    this.booms.forEach(b => {
+      ctx.globalAlpha = Math.min(1, b.life / 20);
+      ctx.font = '32px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('💥', b.x, b.y);
+      ctx.globalAlpha = 1;
+    });
+    ctx.fillStyle = '#6e2c00';
+    ctx.fillRect(0, counterY, canvas.width, canvas.height - counterY);
+    ctx.fillStyle = '#935116';
+    ctx.fillRect(0, counterY, canvas.width, 14);
+  }
+  getScore(id) {
+    if (id === mp.playerId) return Math.max(0, this.localHits * 20 - this.localMisses * 8);
+    const sc = (this.state.playerScores || {})[id];
+    return sc !== undefined ? sc : '-';
+  }
+  destroy() {
+    document.getElementById('touchArea').style.display = 'none';
+    document.getElementById('touchArea').ontouchstart = null;
+    document.getElementById('touchArea').onmousedown = null;
+  }
+}
+
+// Tetris Blitz – 45 Sekunden, Reihen zählen
+class TetrisGame {
+  constructor(state) {
+    this.state = state;
+    this.cols = 6; this.rows = 8;
+    this.grid = [];
+    this.piece = null;
+    this.nextDrop = 0;
+    this.score = 0;
+    this.begun = false;
+    this.finished = false;
+    this.endAt = 0;
+    this.dropMs = 500;
+    this.shapes = [
+      [[1,1,1,1]],
+      [[1,1],[1,1]],
+      [[0,1,0],[1,1,1]],
+      [[1,0,0],[1,1,1]],
+      [[0,0,1],[1,1,1]],
+      [[0,1,1],[1,1,0]],
+      [[1,1,0],[0,1,1]]
+    ];
+    this.colors = ['#00f0f0','#f0f000','#a000f0','#f0a000','#0000f0','#00f000','#f00000'];
+  }
+  start() {
+    this.grid = Array.from({ length: this.rows }, () => Array(this.cols).fill(0));
+    document.getElementById('gameTimer').style.display = 'block';
+    document.getElementById('roundInfo').style.display = 'block';
+    document.getElementById('touchArea').style.display = 'block';
+    document.getElementById('touchArea').style.pointerEvents = 'auto';
+    const onTap = (e) => {
+      e.preventDefault();
+      if (!this.begun || this.finished || !this.piece) return;
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches ? e.touches[0] : e;
+      const x = (t.clientX - rect.left) / rect.width;
+      const y = (t.clientY - rect.top) / rect.height;
+      if (y < 0.28) this.rotate();
+      else if (y > 0.72) this.hardDrop();
+      else if (x < 0.4) this.move(-1);
+      else if (x > 0.6) this.move(1);
+    };
+    document.getElementById('touchArea').ontouchstart = onTap;
+    document.getElementById('touchArea').onmousedown = onTap;
+    waitForStart(this.state, () => {
+      this.begun = true;
+      this.endAt = Date.now() + (this.state.duration || 45000);
+      this.spawn();
+      this.nextDrop = Date.now() + this.dropMs;
+    });
+  }
+  spawn() {
+    const id = Math.floor(Math.random() * this.shapes.length);
+    const shape = this.shapes[id].map(r => r.slice());
+    // Start deutlich oberhalb des Feldes
+    this.piece = {
+      shape,
+      x: Math.floor((this.cols - shape[0].length) / 2),
+      y: -shape.length - 3,
+      color: this.colors[id]
+    };
+    // Feld voll → eigene Punkte melden und auf andere Spieler warten
+    if (this.grid[0].some(v => v) && this.collides(this.piece.x, 0, this.piece.shape)) {
+      this.finished = true;
+      this.piece = null;
+      app.reportMyScore(this.score);
+    }
+  }
+  collides(px, py, shape) {
+    for (let r = 0; r < shape.length; r++) {
+      for (let c = 0; c < shape[r].length; c++) {
+        if (!shape[r][c]) continue;
+        const x = px + c, y = py + r;
+        if (x < 0 || x >= this.cols || y >= this.rows) return true;
+        if (y >= 0 && this.grid[y][x]) return true;
+      }
+    }
+    return false;
+  }
+  merge() {
+    const { shape, x, y, color } = this.piece;
+    for (let r = 0; r < shape.length; r++) {
+      for (let c = 0; c < shape[r].length; c++) {
+        if (shape[r][c] && y + r >= 0) this.grid[y + r][x + c] = color;
+      }
+    }
+    let cleared = 0;
+    for (let r = this.rows - 1; r >= 0; r--) {
+      if (this.grid[r].every(v => v)) {
+        this.grid.splice(r, 1);
+        this.grid.unshift(Array(this.cols).fill(0));
+        cleared++;
+        r++;
+      }
+    }
+    if (cleared) this.score += cleared * 100 * cleared;
+    this.spawn();
+  }
+  move(dx) {
+    if (!this.piece) return;
+    if (!this.collides(this.piece.x + dx, this.piece.y, this.piece.shape)) this.piece.x += dx;
+  }
+  rotate() {
+    if (!this.piece) return;
+    const s = this.piece.shape;
+    const rot = s[0].map((_, i) => s.map(row => row[i]).reverse());
+    if (!this.collides(this.piece.x, this.piece.y, rot)) this.piece.shape = rot;
+  }
+  hardDrop() {
+    if (!this.piece) return;
+    while (!this.collides(this.piece.x, this.piece.y + 1, this.piece.shape)) this.piece.y++;
+    this.merge();
+  }
+  onRemoteState(gs) {
+    this.state = Object.assign(this.state, gs);
+    app.tryFinishWhenAllScored(this.state);
+  }
+  update() {
+    if (!this.begun || this.finished) return;
+    const left = Math.max(0, this.endAt - Date.now());
+    document.getElementById('gameTimer').textContent = (left / 1000).toFixed(1) + 's';
+    document.getElementById('roundInfo').textContent = this.score + ' Pkt';
+    if (left <= 0) {
+      this.finished = true;
+      app.reportMyScore(this.score);
+      return;
+    }
+    if (this.piece && Date.now() >= this.nextDrop) {
+      if (!this.collides(this.piece.x, this.piece.y + 1, this.piece.shape)) this.piece.y++;
+      else this.merge();
+      this.nextDrop = Date.now() + this.dropMs;
+    }
+  }
+  draw(ctx) {
+    ctx.fillStyle = '#0d0d1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Kleines Feld, genug Rand unten (kein Abschneiden), Spawn-Zone oben
+    const cell = Math.min(32, Math.floor((canvas.width * 0.5) / this.cols), Math.floor((canvas.height * 0.4) / this.rows));
+    const boardW = this.cols * cell;
+    const boardH = this.rows * cell;
+    const ox = (canvas.width - boardW) / 2;
+    const oy = canvas.height - boardH - 80;
+    // Spawn-Zone oben (höher)
+    ctx.fillStyle = 'rgba(78,205,196,0.07)';
+    ctx.fillRect(ox - 5, Math.max(48, oy - cell * 5), boardW + 10, Math.min(cell * 5, oy - 52));
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(ox - 5, oy - 5, boardW + 10, boardH + 10);
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ox - 5, oy - 5, boardW + 10, boardH + 10);
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const x = ox + c * cell, y = oy + r * cell;
+        ctx.fillStyle = this.grid[r][c] || 'rgba(255,255,255,0.05)';
+        ctx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+        ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, cell, cell);
+      }
+    }
+    if (this.piece) {
+      const { shape, x: px, y: py, color } = this.piece;
+      ctx.fillStyle = color;
+      for (let r = 0; r < shape.length; r++) {
+        for (let c = 0; c < shape[r].length; c++) {
+          if (!shape[r][c]) continue;
+          const gy = py + r;
+          const x = ox + (px + c) * cell + 1;
+          const y = oy + gy * cell + 1;
+          if (y + cell - 2 > 45 && y < oy + boardH) {
+            ctx.globalAlpha = gy < 0 ? 0.92 : 1;
+            ctx.fillRect(x, y, cell - 2, cell - 2);
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('↑ drehen  ·  ← → bewegen  ·  ↓ drop', canvas.width / 2, canvas.height - 22);
+  }
+  getScore(id) {
+    if (id === mp.playerId) return this.score;
+    const sc = (this.state.playerScores || {})[id];
+    return sc !== undefined ? sc : '-';
+  }
+  destroy() {
+    document.getElementById('touchArea').style.display = 'none';
+    document.getElementById('touchArea').ontouchstart = null;
+    document.getElementById('touchArea').onmousedown = null;
+  }
+}
+
+// Rennstrecke – Spur wechseln, Autos ausweichen
+class RacerGame {
+  constructor(state) {
+    this.state = state;
+    this.lane = 1;
+    this.cars = [];
+    this.dist = 0;
+    this.alive = true;
+    this.begun = false;
+    this.finished = false;
+    this.endAt = 0;
+    this.seed = (state.seed || 1) + (mp.mySlot || 0) * 17;
+    this.nextCar = 0;
+    this.score = 0;
+  }
+  start() {
+    document.getElementById('gameTimer').style.display = 'block';
+    document.getElementById('roundInfo').style.display = 'block';
+    document.getElementById('touchArea').style.display = 'block';
+    document.getElementById('touchArea').style.pointerEvents = 'auto';
+    const onTap = (e) => {
+      e.preventDefault();
+      if (!this.begun || this.finished || !this.alive) return;
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches ? e.touches[0] : e;
+      const x = (t.clientX - rect.left) / rect.width;
+      if (x < 0.5) this.lane = Math.max(0, this.lane - 1);
+      else this.lane = Math.min(2, this.lane + 1);
+    };
+    document.getElementById('touchArea').ontouchstart = onTap;
+    document.getElementById('touchArea').onmousedown = onTap;
+    waitForStart(this.state, () => {
+      this.begun = true;
+      this.endAt = Date.now() + (this.state.duration || 30000);
+      this.nextCar = Date.now() + 800;
+    });
+  }
+  _rand() {
+    this.seed = (this.seed * 16807 + 7) % 2147483647;
+    return (this.seed % 10000) / 10000;
+  }
+  onRemoteState(gs) {
+    this.state = Object.assign(this.state, gs);
+    app.tryFinishWhenAllScored(this.state);
+  }
+  update() {
+    if (!this.begun || this.finished) return;
+    const left = Math.max(0, this.endAt - Date.now());
+    document.getElementById('gameTimer').textContent = (left / 1000).toFixed(1) + 's';
+    if (this.alive) {
+      this.dist += 4;
+      this.score = Math.floor(this.dist / 10);
+      document.getElementById('roundInfo').textContent = this.score + ' m';
+      if (Date.now() >= this.nextCar) {
+        this.cars.push({ lane: Math.floor(this._rand() * 3), y: -60, color: ['#e74c3c','#3498db','#f39c12'][Math.floor(this._rand() * 3)] });
+        this.nextCar = Date.now() + 700 + this._rand() * 900;
+      }
+      this.cars.forEach(c => { c.y += 6 + this.dist * 0.001; });
+      const playerY = canvas.height - 100;
+      for (const c of this.cars) {
+        if (c.lane === this.lane && c.y > playerY - 50 && c.y < playerY + 40) {
+          this.alive = false;
+          break;
+        }
+      }
+      this.cars = this.cars.filter(c => c.y < canvas.height + 40);
+    }
+    if (left <= 0 || (!this.alive && left < (this.state.duration || 30000) - 500)) {
+      // Bei Crash: restliche Zeit warten? User wollte eigene Runde – bei Crash sofort melden
+      if (!this.alive || left <= 0) {
+        if (!this.finished) {
+          this.finished = true;
+          app.reportMyScore(this.score);
+        }
+      }
+    }
+  }
+  draw(ctx) {
+    ctx.fillStyle = '#2c3e50';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const roadW = canvas.width * 0.7;
+    const ox = (canvas.width - roadW) / 2;
+    ctx.fillStyle = '#34495e';
+    ctx.fillRect(ox, 0, roadW, canvas.height);
+    const laneW = roadW / 3;
+    ctx.strokeStyle = '#f1c40f';
+    ctx.setLineDash([16, 14]);
+    ctx.lineWidth = 3;
+    for (let i = 1; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(ox + i * laneW, (this.dist * 2) % 30);
+      ctx.lineTo(ox + i * laneW, canvas.height);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // enemy cars
+    this.cars.forEach(c => {
+      const cx = ox + c.lane * laneW + laneW / 2;
+      ctx.fillStyle = c.color;
+      ctx.fillRect(cx - 22, c.y, 44, 60);
+      ctx.fillStyle = '#222';
+      ctx.fillRect(cx - 16, c.y + 10, 32, 20);
+    });
+    // player
+    const py = canvas.height - 100;
+    const px = ox + this.lane * laneW + laneW / 2;
+    ctx.fillStyle = this.alive ? '#2ecc71' : '#7f8c8d';
+    ctx.fillRect(px - 22, py, 44, 60);
+    ctx.fillStyle = '#1a5276';
+    ctx.fillRect(px - 16, py + 12, 32, 22);
+    if (!this.alive) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 28px Fredoka One';
+      ctx.textAlign = 'center';
+      ctx.fillText('Crash!', canvas.width / 2, canvas.height / 2);
+    }
+  }
+  getScore(id) {
+    if (id === mp.playerId) return this.score;
+    const sc = (this.state.playerScores || {})[id];
+    return sc !== undefined ? sc : '-';
+  }
+  destroy() {
+    document.getElementById('touchArea').style.display = 'none';
+    document.getElementById('touchArea').ontouchstart = null;
+    document.getElementById('touchArea').onmousedown = null;
+  }
+}
+
+// Jump & Run – tippen zum Springen
+// Jump & Run – hintere Perspektive, hoch wischen = springen, runter = ducken
+// Jump & Run – Seitenansicht, Hindernisse kommen von rechts nach links
+class RunnerGame {
+  constructor(state) {
+    this.state = state;
+    this.dist = 0;
+    this.playerY = 0;
+    this.vy = 0;
+    this.ducking = false;
+    this.duckUntil = 0;
+    this.obstacles = [];
+    this.score = 0;
+    this.alive = true;
+    this.begun = false;
+    this.finished = false;
+    this.endAt = 0;
+    this.seed = (state.seed || 1) + (mp.mySlot || 0) * 23;
+    this.nextObs = 0;
+    this._touchY0 = null;
+    this.groundY = 0;
+    this.playerX = 0;
+  }
+  start() {
+    document.getElementById('gameTimer').style.display = 'block';
+    document.getElementById('roundInfo').style.display = 'block';
+    document.getElementById('touchArea').style.display = 'block';
+    document.getElementById('touchArea').style.pointerEvents = 'auto';
+    const area = document.getElementById('touchArea');
+    const startTouch = (e) => {
+      e.preventDefault();
+      if (!this.begun || this.finished || !this.alive) return;
+      const t = e.touches ? e.touches[0] : e;
+      this._touchY0 = t.clientY;
+    };
+    const endTouch = (e) => {
+      e.preventDefault();
+      if (!this.begun || this.finished || !this.alive || this._touchY0 === null) return;
+      const t = e.changedTouches ? e.changedTouches[0] : e;
+      const dy = t.clientY - this._touchY0;
+      this._touchY0 = null;
+      if (dy < -28) {
+        if (this.playerY <= 0 && !this.ducking) this.vy = 12;
+      } else if (dy > 28) {
+        this.ducking = true;
+        this.duckUntil = Date.now() + 550;
+        this.playerY = 0;
+        this.vy = 0;
+      } else {
+        if (this.playerY <= 0 && !this.ducking) this.vy = 12;
+      }
+    };
+    area.ontouchstart = startTouch;
+    area.ontouchend = endTouch;
+    area.onmousedown = startTouch;
+    area.onmouseup = endTouch;
+    waitForStart(this.state, () => {
+      this.begun = true;
+      this.endAt = Date.now() + (this.state.duration || 30000);
+      this.nextObs = Date.now() + 900;
+      this.groundY = canvas.height - 115;
+      this.playerX = canvas.width * 0.22;
+    });
+  }
+  _rand() {
+    this.seed = (this.seed * 16807 + 7) % 2147483647;
+    return (this.seed % 10000) / 10000;
+  }
+  onRemoteState(gs) {
+    this.state = Object.assign(this.state, gs);
+    app.tryFinishWhenAllScored(this.state);
+  }
+  update() {
+    if (!this.begun || this.finished) return;
+    const left = Math.max(0, this.endAt - Date.now());
+    document.getElementById('gameTimer').textContent = (left / 1000).toFixed(1) + 's';
+    if (this.ducking && Date.now() > this.duckUntil) this.ducking = false;
+    if (this.alive) {
+      this.dist += 5;
+      this.score = Math.floor(this.dist / 8);
+      if (!this.ducking) {
+        this.vy -= 0.6;
+        this.playerY += this.vy;
+        if (this.playerY < 0) { this.playerY = 0; this.vy = 0; }
+      }
+      document.getElementById('roundInfo').textContent = this.score + ' m';
+      // Hindernisse: konstante Geschwindigkeit von rechts nach links
+      const speed = 5.5;
+      if (Date.now() >= this.nextObs) {
+        const type = this._rand() > 0.5 ? 'low' : 'high';
+        this.obstacles.push({
+          x: canvas.width + 40,
+          type,
+          hit: false
+        });
+        this.nextObs = Date.now() + 950 + this._rand() * 700;
+      }
+      for (const o of this.obstacles) {
+        o.x -= speed;
+        // Trefferzone am Spieler
+        if (!o.hit && o.x < this.playerX + 28 && o.x > this.playerX - 30) {
+          if (o.type === 'low' && this.playerY < 30) {
+            this.alive = false; o.hit = true;
+          } else if (o.type === 'high' && !this.ducking) {
+            this.alive = false; o.hit = true;
+          } else if ((o.type === 'low' && this.playerY >= 30) || (o.type === 'high' && this.ducking)) {
+            this.score += 25; o.hit = true;
+          }
+        }
+      }
+      this.obstacles = this.obstacles.filter(o => o.x > -60);
+    }
+    if (left <= 0 || !this.alive) {
+      if (!this.finished) {
+        this.finished = true;
+        app.reportMyScore(this.score);
+      }
+    }
+  }
+  draw(ctx) {
+    const w = canvas.width, h = canvas.height;
+    const ground = this.groundY || (h - 115);
+    // Himmel
+    const sky = ctx.createLinearGradient(0, 0, 0, ground);
+    sky.addColorStop(0, '#5dade2');
+    sky.addColorStop(1, '#aed6f1');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, ground);
+    // Wolken
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for (let i = 0; i < 4; i++) {
+      const cx = ((i * 120 - this.dist * 0.3) % (w + 100)) - 40;
+      const cy = 40 + (i % 3) * 28;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+      ctx.arc(cx + 16, cy + 4, 14, 0, Math.PI * 2);
+      ctx.arc(cx - 14, cy + 5, 12, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Boden
+    ctx.fillStyle = '#27ae60';
+    ctx.fillRect(0, ground, w, h - ground);
+    ctx.fillStyle = '#1e8449';
+    ctx.fillRect(0, ground, w, 8);
+    // Boden-Linien (Scroll)
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i++) {
+      const lx = ((i * 70 - this.dist * 1.2) % (w + 70));
+      ctx.beginPath();
+      ctx.moveTo(lx, ground + 18);
+      ctx.lineTo(lx + 30, ground + 18);
+      ctx.stroke();
+    }
+    // Hindernisse
+    this.obstacles.forEach(o => {
+      if (o.type === 'low') {
+        // niedrig – springen
+        ctx.fillStyle = '#8e44ad';
+        ctx.fillRect(o.x - 16, ground - 28, 32, 28);
+        ctx.fillStyle = '#f1c40f';
+        ctx.fillRect(o.x - 16, ground - 28, 32, 4);
+      } else {
+        // hoch – ducken (Lücke unten)
+        ctx.fillStyle = '#c0392b';
+        ctx.fillRect(o.x - 18, ground - 95, 36, 55);
+        ctx.fillStyle = '#922b21';
+        ctx.fillRect(o.x - 18, ground - 40, 6, 40);
+        ctx.fillRect(o.x + 12, ground - 40, 6, 40);
+      }
+    });
+    // Spieler von der Seite – Füße auf dem Boden, Figur komplett sichtbar
+    const px = this.playerX || w * 0.22;
+    const lift = this.playerY * 1.9;
+    const footY = ground - lift;
+    if (this.ducking) {
+      ctx.fillStyle = this.alive ? '#e67e22' : '#7f8c8d';
+      ctx.beginPath();
+      ctx.ellipse(px + 6, footY - 14, 18, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#d35400';
+      ctx.fillRect(px - 4, footY - 12, 28, 12);
+      ctx.fillStyle = this.alive ? '#f5cba7' : '#aaa';
+      ctx.beginPath();
+      ctx.arc(px + 22, footY - 18, 9, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      const leg = Math.sin(this.dist * 0.2) * 5;
+      const hipY = footY - 18;
+      // Beine (Füße bei footY)
+      ctx.strokeStyle = '#2980b9';
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(px, hipY);
+      ctx.lineTo(px - 7, footY + leg * 0.3);
+      ctx.moveTo(px, hipY);
+      ctx.lineTo(px + 8, footY - leg * 0.3);
+      ctx.stroke();
+      // Körper
+      ctx.fillStyle = this.alive ? '#e67e22' : '#7f8c8d';
+      ctx.fillRect(px - 8, hipY - 26, 18, 28);
+      // Arm
+      ctx.strokeStyle = '#d35400';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(px + 8, hipY - 20);
+      ctx.lineTo(px + 18, hipY - 8 + leg * 0.4);
+      ctx.stroke();
+      // Kopf
+      ctx.fillStyle = this.alive ? '#f5cba7' : '#aaa';
+      ctx.beginPath();
+      ctx.arc(px + 2, hipY - 36, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#222';
+      ctx.beginPath();
+      ctx.arc(px + 6, hipY - 38, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (!this.alive) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 26px Fredoka One';
+      ctx.textAlign = 'center';
+      ctx.fillText('Out!', w / 2, h / 2);
+    }
+  }
+  getScore(id) {
+    if (id === mp.playerId) return this.score;
+    const sc = (this.state.playerScores || {})[id];
+    return sc !== undefined ? sc : '-';
+  }
+  destroy() {
+    document.getElementById('touchArea').style.display = 'none';
+    document.getElementById('touchArea').ontouchstart = null;
+    document.getElementById('touchArea').ontouchend = null;
+    document.getElementById('touchArea').onmousedown = null;
+    document.getElementById('touchArea').onmouseup = null;
+  }
+}
+
+function initFirebase() {
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    auth = firebase.auth();
+    try { const mpApp = firebase.initializeApp(MP_FIREBASE_CONFIG, 'mp'); rtdb = firebase.database(mpApp); }
+    catch (e) { try { rtdb = firebase.database(); } catch (e2) {} }
+    auth.signInAnonymously().catch(() => {});
+    const ind = document.getElementById('syncIndicator');
+    if (rtdb) { ind.className = 'sync-indicator online'; document.getElementById('syncIcon').textContent = '📡'; document.getElementById('syncText').textContent = 'Online'; }
+  } catch (e) { console.error(e); }
+}
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+    this.moveTo(x + r, y); this.arcTo(x + w, y, x + w, y + h, r); this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r); this.arcTo(x, y, x + w, y, r); this.closePath();
+  };
+}
+initFirebase();
+document.getElementById('playerNameInput').value = 'Spieler' + Math.floor(Math.random() * 90 + 10);
+</script>
+</body>
+</html>
